@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+:root {
+  --canvas: #f5f4f0;
+  --paper: #fbfaf7;
+  --ink: #191918;
+  --muted: #686761;
+  --line: #d8d6cf;
+  --line-strong: #aaa79d;
+  --violet: #5b3df5;
+  --violet-dark: #4325df;
+  --violet-wash: #eeeafd;
+  --success: #17653a;
+  --success-wash: #e7f3eb;
+  --danger: #a22c2c;
+  --danger-wash: #f9e9e7;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-violet: var(--violet);
+  --color-violet-dark: var(--violet-dark);
+  --color-violet-wash: var(--violet-wash);
+  --color-success: var(--success);
+  --color-success-wash: var(--success-wash);
+  --color-danger: var(--danger);
+  --color-danger-wash: var(--danger-wash);
+  --font-sans: "Figtree Variable", "Avenir Next", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: "Figtree Variable", "Avenir Next", sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--violet-wash);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--violet) 45%, transparent);
+  outline-offset: 3px;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.proof-enter {
+  animation: proof-enter 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes proof-enter {
+  from {
+    clip-path: inset(0 0 11% 0);
+    filter: blur(3px);
+    transform: translateY(10px);
+  }
+  to {
+    clip-path: inset(0);
+    filter: blur(0);
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
