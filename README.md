@@ -2,7 +2,7 @@
 
 > Your agent spends well, and you can see why.
 
-Ordiva is an agentic supplier-sourcing platform built for the **Agentic Economy** track of the Arc Hackathon. A user gives the agent a real-world procurement goal and a USDC budget. Ordiva plans the work, discovers supplier candidates, decides what evidence is worth buying, and exposes the reason, policy result, price, and receipt behind every paid service call.
+Ordiva is an agentic supplier-sourcing platform built for the **Agentic Economy** track of the Arc Hackathon. A user gives the agent a real-world procurement goal and a USDC budget. Today, Ordiva plans the work and discovers supplier candidates; its paid service rail is designed to buy stronger evidence while exposing the reason, policy result, price, and receipt behind every purchase.
 
 The central idea is simple: **the model provides judgment; deterministic code controls authority**.
 
@@ -12,7 +12,7 @@ AI agents can search, reason, and recommend, but purchasing data safely is still
 
 A sourcing operator normally has to coordinate search providers, website scrapers, company-enrichment services, contact discovery, and email tools. Giving an LLM unrestricted access to those services creates a different problem: fetched content is untrusted, costs are difficult to explain, and a prompt-injected model must never be able to move funds by itself.
 
-Circle already provides the wallet and static controls. Ordiva adds the missing buying layer:
+Circle already provides the user-controlled wallet infrastructure. Ordiva adds the missing buying layer:
 
 - which service is worth paying for;
 - whether the returned evidence is useful;
@@ -41,16 +41,16 @@ Initial public-web discovery is explicitly reported as a **zero-wallet-charge pr
 
 ## Why this belongs in the Agentic Economy
 
-Ordiva is not a chat wrapper around a search API. The product is shaped around economic decisions:
+Ordiva is not a chat wrapper around a search API. Its complete product loop is shaped around economic decisions:
 
 - the agent receives a goal rather than a single query;
 - it decomposes that goal into research and evidence requirements;
-- it chooses between paid capabilities with different prices and expected value;
+- it can choose between paid capabilities with different prices and expected value;
 - it operates inside a user-defined USDC budget;
 - it can adapt when a provider fails or evidence is weak;
-- and it must decide when the job is complete.
+- and it can decide when the job is complete.
 
-The LLM never authorizes payment. It recommends the next useful purchase; deterministic code validates the network, service, seller, schema, budget, and allowlist before any authorization can proceed.
+The current MVP proves the planning and discovery stage plus the Arc x402 seller rail. When those paths are connected, the LLM may recommend the next useful purchase, but it will never authorize payment: deterministic code validates the network, service, seller, schema, budget, and allowlist before authorization can proceed.
 
 ## Why Arc
 
@@ -113,17 +113,17 @@ The remaining bridge is an explicit Circle wallet signing flow that lets a user'
 
 ## Judgment and authority
 
-| Decision | Owner |
-|---|---|
-| Decompose the sourcing goal | LLM |
-| Generate discovery and evidence requirements | LLM |
-| Judge whether better evidence may be worth buying | LLM |
-| Choose whether to retry, switch, or stop | LLM |
-| Enforce the Arc network | Deterministic code |
-| Enforce service and seller allowlists | Deterministic code |
-| Enforce the budget and exact price | Deterministic code |
-| Validate request and response schemas | Deterministic code |
-| Authorize email recipients | Deterministic code plus explicit user approval |
+| Decision | Owner | Current state |
+|---|---|---|
+| Decompose the sourcing goal | LLM | Implemented |
+| Generate discovery and evidence requirements | LLM | Implemented |
+| Recommend a paid evidence purchase | LLM | Next |
+| Choose whether to retry, switch, or stop | LLM plus deterministic limits | Next |
+| Enforce the Arc network | Deterministic code | Implemented on adapter routes |
+| Enforce allowed services and sellers | Deterministic code | Service registry implemented; buyer seller policy next |
+| Enforce the budget and exact price | Deterministic code | Adapter price enforced; run ledger next |
+| Validate request and response schemas | Deterministic code | Implemented |
+| Authorize email recipients | Deterministic code plus explicit user approval | Allowlist implemented; run approval next |
 
 Fetched pages are treated as evidence, never instructions. The model receives bounded content and returns constrained structured output.
 
@@ -190,6 +190,7 @@ Wallet ownership alone does not grant the backend signing authority. Paid agent 
 - Arc Testnet is the only accepted x402 network.
 - The model receives no payment or email tools.
 - Request validation and safety preflight run before payment.
+- Metered upstream execution is an explicit opt-in independent of `NODE_ENV`.
 - Scraping rejects private, loopback, and local network targets.
 - Email requires an exact recipient or domain allowlist.
 - Resend requests require an idempotency key.
@@ -259,6 +260,14 @@ cp api/.env.example api/.env
 
 Fill the required values in `api/.env`. Never commit that file.
 
+Metered conventional upstream calls are disabled by default. To deliberately use OpenAI, Firecrawl, Tavily, Apollo, or Resend credits in any environment, including development, set:
+
+```bash
+ORDIVA_UPSTREAM_MODE=live
+```
+
+With `ORDIVA_UPSTREAM_MODE=disabled`, sourcing stops before OpenAI or Firecrawl and paid adapter routes reject the request before x402 payment.
+
 ### Run
 
 Start the API:
@@ -281,6 +290,7 @@ To use a different API origin, set `ORDIVA_API_URL` for the web process.
 
 | Variable | Required for | Purpose |
 |---|---|---|
+| `ORDIVA_UPSTREAM_MODE` | Metered calls | `disabled` by default; set to `live` to explicitly allow metered upstream execution in any environment |
 | `MONGODB_URI` | Accounts | MongoDB connection |
 | `AUTH_JWT_SECRET` | Accounts | Signs Ordiva sessions |
 | `CIRCLE_API_KEY` | Accounts | Circle developer API access |
@@ -319,7 +329,7 @@ The current repository passes:
 
 - TypeScript type-checking;
 - ESLint;
-- 24 API integration tests;
+- 27 API integration tests;
 - the NestJS production build;
 - and the Next.js production build on Node.js 22.
 

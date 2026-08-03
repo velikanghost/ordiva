@@ -30,6 +30,7 @@ async function createTestApp(options: {
 function config(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     PORT: 4100,
+    ORDIVA_UPSTREAM_MODE: "live",
     CIRCLE_WALLETS_API_URL: "https://api.circle.com",
     ARC_ADAPTER_SELLER_ADDRESS: "0x1111111111111111111111111111111111111111",
     CIRCLE_GATEWAY_FACILITATOR_URL: "https://gateway-api-testnet.circle.com",
@@ -123,6 +124,28 @@ describe("Arc adapter service", () => {
       .send({ query: "industrial pump suppliers Rotterdam" })
       .expect(503);
     expect(charged).not.toHaveBeenCalled();
+  });
+
+  it("rejects metered adapter execution before payment when live upstreams are disabled", async () => {
+    const charged = vi.fn();
+    const fetchMock = vi.fn<typeof fetch>();
+    const app = await createTestApp({
+      config: config({ ORDIVA_UPSTREAM_MODE: "disabled" }),
+      paymentGate: paymentGate(charged),
+      fetch: fetchMock
+    });
+
+    const catalog = await request(app.getHttpServer()).get("/v1/catalog").expect(200);
+    expect(catalog.body.upstreamMode).toBe("disabled");
+    expect(catalog.body.adapters.every((adapter: { configured: boolean }) => !adapter.configured)).toBe(true);
+
+    await request(app.getHttpServer())
+      .post("/v1/suppliers/firecrawl-search")
+      .send({ query: "industrial pump suppliers Rotterdam" })
+      .expect(503);
+
+    expect(charged).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("rejects invalid input before requesting payment", async () => {

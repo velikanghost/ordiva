@@ -22,6 +22,7 @@ afterEach(async () => {
 function config(): AccountsConfig {
   return {
     PORT: 4100,
+    ORDIVA_UPSTREAM_MODE: "live",
     MONGODB_URI: "mongodb://127.0.0.1:27017/ordiva-test",
     AUTH_JWT_SECRET: "test-secret-that-is-at-least-32-characters-long",
     CIRCLE_API_KEY: "circle-test-key",

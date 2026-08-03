@@ -22,6 +22,7 @@ export class AdaptersController {
     return {
       operator: "ordiva",
       network: ARC_TESTNET_CAIP2,
+      upstreamMode: this.config.ORDIVA_UPSTREAM_MODE,
       sellerAddress: this.config.ARC_ADAPTER_SELLER_ADDRESS,
       terms: "Arc Testnet x402 payment purchases access to an Ordiva-operated adapter backed by the disclosed conventional upstream.",
       adapters: this.registry.all().map((adapter) => ({

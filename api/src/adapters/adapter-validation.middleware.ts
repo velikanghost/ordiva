@@ -8,7 +8,7 @@ export function adapterValidationMiddleware(adapter: AdapterDefinition<unknown, 
       response.status(503).json({
         error: "adapter_unavailable",
         adapter: adapter.id,
-        message: `${adapter.upstreamProvider} credentials or safety configuration are missing; no payment was requested.`
+        message: `${adapter.upstreamProvider} live execution or required configuration is unavailable; no payment was requested.`
       });
       return;
     }

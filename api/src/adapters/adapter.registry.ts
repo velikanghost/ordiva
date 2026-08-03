@@ -9,7 +9,10 @@ export class AdapterRegistry {
   private readonly adapters: AdapterDefinition<unknown, unknown>[];
 
   constructor(@Inject(ADAPTER_CONFIG) config: AppConfig) {
-    this.adapters = createAdapters(config);
+    this.adapters = createAdapters(config).map((adapter) => ({
+      ...adapter,
+      configured: config.ORDIVA_UPSTREAM_MODE === "live" && adapter.configured
+    }));
   }
 
   all(): readonly AdapterDefinition<unknown, unknown>[] {

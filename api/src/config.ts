@@ -10,6 +10,7 @@ const optionalSecret = z.preprocess((value) => value === "" ? undefined : value,
 
 const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(4100),
+  ORDIVA_UPSTREAM_MODE: z.enum(["disabled", "live"]).default("disabled"),
   MONGODB_URI: optionalString,
   AUTH_JWT_SECRET: optionalSecret,
   CIRCLE_API_KEY: optionalString,

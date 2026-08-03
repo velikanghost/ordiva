@@ -23,9 +23,10 @@ afterEach(async () => {
   await Promise.all(openApps.splice(0).map((app) => app.close()));
 });
 
-function config(): SourcingConfig {
+function config(overrides: Partial<SourcingConfig> = {}): SourcingConfig {
   return {
     PORT: 4100,
+    ORDIVA_UPSTREAM_MODE: "live",
     MONGODB_URI: "mongodb://127.0.0.1:27017/ordiva-test",
     AUTH_JWT_SECRET: "test-secret-that-is-at-least-32-characters-long",
     CIRCLE_API_KEY: "circle-test-key",
@@ -43,7 +44,8 @@ function config(): SourcingConfig {
     PRICE_FIRECRAWL_SCRAPE: "$0.02",
     PRICE_FIRECRAWL_CONTACT: "$0.05",
     PRICE_APOLLO_COMPANY: "$0.03",
-    PRICE_RESEND_EMAIL: "$0.01"
+    PRICE_RESEND_EMAIL: "$0.01",
+    ...overrides
   };
 }
 
@@ -91,11 +93,15 @@ class AuthenticatedGuard implements CanActivate {
   }
 }
 
-async function createApp(generator: SourcingPlanGenerator, search: SupplierSearch = supplierSearch()) {
+async function createApp(
+  generator: SourcingPlanGenerator,
+  search: SupplierSearch = supplierSearch(),
+  currentConfig: SourcingConfig = config()
+) {
   const builder = Test.createTestingModule({
     controllers: [SourcingController],
     providers: [
-      { provide: SOURCING_CONFIG, useValue: config() },
+      { provide: SOURCING_CONFIG, useValue: currentConfig },
       { provide: SOURCING_PLAN_GENERATOR, useValue: generator },
       { provide: SOURCING_SUPPLIER_SEARCH, useValue: search },
       SourcingService
@@ -109,6 +115,20 @@ async function createApp(generator: SourcingPlanGenerator, search: SupplierSearc
 }
 
 describe("OpenAI sourcing plan boundary", () => {
+  it("defaults metered upstreams to disabled and permits an explicit live override in development", () => {
+    const disabled = loadConfig({
+      ARC_ADAPTER_SELLER_ADDRESS: "0x1111111111111111111111111111111111111111"
+    });
+    const live = loadConfig({
+      NODE_ENV: "development",
+      ORDIVA_UPSTREAM_MODE: "live",
+      ARC_ADAPTER_SELLER_ADDRESS: "0x1111111111111111111111111111111111111111"
+    });
+
+    expect(disabled.ORDIVA_UPSTREAM_MODE).toBe("disabled");
+    expect(live.ORDIVA_UPSTREAM_MODE).toBe("live");
+  });
+
   it("accepts the existing OPENAI environment name as the API key", () => {
     const loaded = loadConfig({
       ARC_ADAPTER_SELLER_ADDRESS: "0x1111111111111111111111111111111111111111",
@@ -157,6 +177,25 @@ describe("OpenAI sourcing plan boundary", () => {
     ]);
     expect(search).toHaveBeenCalledTimes(3);
     expect(response.body.id).toMatch(/^run-[0-9a-f-]+$/);
+  });
+
+  it("does not call OpenAI or Firecrawl when live upstreams are disabled", async () => {
+    const generator = vi.fn<SourcingPlanGenerator>().mockResolvedValue(generatedPlan);
+    const search = supplierSearch();
+    const app = await createApp(generator, search, config({ ORDIVA_UPSTREAM_MODE: "disabled" }));
+
+    const response = await request(app.getHttpServer())
+      .post("/v1/runs/plan")
+      .send({
+        goal: "Find at least three industrial pump suppliers in Rotterdam",
+        budget: "0.25",
+        supplierMinimum: 3
+      })
+      .expect(503);
+
+    expect(response.body.message).toBe("Live supplier discovery is disabled by the operator.");
+    expect(generator).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
   });
 
   it("rejects fewer than three suppliers before calling the model", async () => {

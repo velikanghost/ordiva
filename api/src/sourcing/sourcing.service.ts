@@ -38,6 +38,9 @@ export class SourcingService {
 
   async plan(userId: string, rawInput: CreateSourcingRunInput): Promise<PlannedSourcingRun> {
     const input = createSourcingRunSchema.parse(rawInput);
+    if (this.config.ORDIVA_UPSTREAM_MODE !== "live") {
+      throw new ServiceUnavailableException("Live supplier discovery is disabled by the operator.");
+    }
     if (toMicros(input.budget) < toMicros(this.config.PRICE_FIRECRAWL_SCRAPE)) {
       throw new BadRequestException(
         `Budget must cover the first paid evidence check (${this.config.PRICE_FIRECRAWL_SCRAPE} USDC)`
