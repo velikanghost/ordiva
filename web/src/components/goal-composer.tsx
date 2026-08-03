@@ -31,7 +31,7 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
         if (!goal.trim() || isRunning) return;
         const query = new URLSearchParams({ goal: goal.trim(), budget });
         if (!session) {
-          router.push(`/sign-in?returnTo=${encodeURIComponent(`/?${query.toString()}`)}`);
+          router.push(`/sign-in?returnTo=${encodeURIComponent(`/app?${query.toString()}`)}`);
           return;
         }
 
@@ -48,7 +48,7 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
         } catch (caught) {
           if (caught instanceof ApiError && caught.status === 401) {
             signOut();
-            router.push(`/sign-in?returnTo=${encodeURIComponent(`/?${query.toString()}`)}`);
+            router.push(`/sign-in?returnTo=${encodeURIComponent(`/app?${query.toString()}`)}`);
             return;
           }
           setError(caught instanceof Error ? caught.message : "The sourcing plan could not be prepared. Please try again.");
