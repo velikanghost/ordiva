@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ArrowRight, ShieldCheck, WalletCards } from "lucide-react";
+import { ArrowRight, Check, LoaderCircle, ShieldCheck, WalletCards } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiJson, ApiError } from "@/lib/api";
 import { savePlannedRun, type PlannedSourcingRun } from "@/lib/run";
@@ -12,10 +12,10 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
   const { hydrated, session, hydrate, signOut } = useSessionStore();
   const [goal, setGoal] = useState(
     initialGoal?.trim() ||
-      "Find at least three ISO-certified molded-fiber packaging suppliers that can handle a 5,000-unit pilot.",
+      "Find at least three industrial pump suppliers in Rotterdam, verify they are real companies, and prepare an RFQ for each.",
   );
-  const [budget, setBudget] = useState(initialBudget || "0.25");
-  const [isPreparing, setIsPreparing] = useState(false);
+  const [budget, setBudget] = useState(initialBudget || "2.00");
+  const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,9 +25,10 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
   return (
     <form
       className="flex h-full flex-col"
+      aria-busy={isRunning}
       onSubmit={async (event) => {
         event.preventDefault();
-        if (!goal.trim() || isPreparing) return;
+        if (!goal.trim() || isRunning) return;
         const query = new URLSearchParams({ goal: goal.trim(), budget });
         if (!session) {
           router.push(`/sign-in?returnTo=${encodeURIComponent(`/?${query.toString()}`)}`);
@@ -35,7 +36,7 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
         }
 
         setError(null);
-        setIsPreparing(true);
+        setIsRunning(true);
         try {
           const run = await apiJson<PlannedSourcingRun>("/v1/runs/plan", {
             method: "POST",
@@ -52,7 +53,7 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
           }
           setError(caught instanceof Error ? caught.message : "The sourcing plan could not be prepared. Please try again.");
         } finally {
-          setIsPreparing(false);
+          setIsRunning(false);
         }
       }}
     >
@@ -88,11 +89,14 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
             />
             <span className="text-xs font-semibold text-muted">USDC</span>
           </div>
+          <p id="budget-help" className="mt-2 text-xs leading-5 text-muted">
+            Maximum paid-service spend; discovery does not charge the wallet.
+          </p>
         </div>
         <div>
           <span className="text-sm font-semibold">Supplier minimum</span>
           <div className="mt-3 flex min-h-12 items-center rounded-[12px] border border-line bg-canvas px-4 text-sm">
-            At least 3 verified results
+            At least 3 distinct candidates
           </div>
         </div>
       </div>
@@ -100,8 +104,28 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
       <div className="mt-auto pt-8">
         <div className="flex items-start gap-3 border-t border-line pt-5 text-sm leading-6 text-muted">
           <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-success" />
-          Deterministic policy checks authorize every paid service. Email always waits for your final approval.
+          Planning and public supplier discovery run automatically. Paid Arc verification remains policy-controlled, and email always waits for your approval.
         </div>
+        {isRunning ? (
+          <div
+            className="mt-5 border-y border-line bg-canvas px-4 py-4"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="flex items-center gap-2 text-sm font-semibold">
+              <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none text-violet" />
+              Autonomous discovery is running
+            </span>
+            <ol className="mt-3 grid gap-2 text-xs leading-5 text-muted sm:grid-cols-2">
+              <li className="flex items-center gap-2">
+                <Check aria-hidden="true" className="size-3.5 shrink-0 text-success" /> Goal accepted
+              </li>
+              <li className="flex items-center gap-2">
+                <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none text-violet" /> Planning and searching suppliers
+              </li>
+            </ol>
+          </div>
+        ) : null}
         {error ? (
           <p className="mt-4 rounded-[12px] bg-danger-wash px-4 py-3 text-sm leading-6 text-danger" role="alert">
             {error}
@@ -109,12 +133,12 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
         ) : null}
         <button
           type="submit"
-          disabled={!hydrated || !goal.trim() || isPreparing}
+          disabled={!hydrated || !goal.trim() || isRunning}
           className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] bg-violet px-5 font-semibold text-white transition-colors hover:bg-violet-dark disabled:cursor-not-allowed disabled:bg-line-strong"
         >
           {!session ? <WalletCards aria-hidden="true" className="size-4" /> : null}
-          {session ? (isPreparing ? "Preparing plan…" : "Prepare run") : "Connect wallet to continue"}
-          {session && !isPreparing ? <ArrowRight aria-hidden="true" className="size-4" /> : null}
+          {session ? (isRunning ? "Planning and searching suppliers…" : "Start autonomous run") : "Connect wallet to continue"}
+          {session && !isRunning ? <ArrowRight aria-hidden="true" className="size-4" /> : null}
         </button>
       </div>
     </form>

@@ -2,7 +2,7 @@ const RUN_KEY_PREFIX = "ordiva.run.v1.";
 
 export interface PlannedSourcingRun {
   id: string;
-  status: "plan_ready";
+  status: "research_ready";
   goal: string;
   supplierMinimum: number;
   budget: {
@@ -16,17 +16,24 @@ export interface PlannedSourcingRun {
     evidenceRequirements: string[];
     outreachQuestions: string[];
   };
-  nextAction: {
-    type: "service_approval_required";
-    adapterId: "firecrawl-search";
-    provider: "Firecrawl";
-    price: string;
-    network: "eip155:5042002";
+  suppliers: Array<{
+    id: string;
+    name: string;
+    url: string;
+    domain: string;
     description: string;
-    input: {
-      query: string;
-      limit: number;
-    };
+    sourceQuery: string;
+  }>;
+  research: {
+    provider: "Firecrawl";
+    queriesExecuted: number;
+    creditsUsed: number | null;
+    arcPayment: null;
+  };
+  nextAction: {
+    type: "supplier_verification_pending";
+    description: string;
+    supplierCount: number;
   };
   permissions: {
     paymentAuthorized: false;
@@ -43,7 +50,14 @@ export function readPlannedRun(runId: string): PlannedSourcingRun | null {
   if (!value) return null;
   try {
     const run = JSON.parse(value) as Partial<PlannedSourcingRun>;
-    if (run.id !== runId || run.status !== "plan_ready" || !run.plan || !run.nextAction) return null;
+    if (
+      run.id !== runId ||
+      run.status !== "research_ready" ||
+      !run.plan ||
+      !run.nextAction ||
+      !Array.isArray(run.suppliers) ||
+      !run.research
+    ) return null;
     return run as PlannedSourcingRun;
   } catch {
     sessionStorage.removeItem(`${RUN_KEY_PREFIX}${runId}`);

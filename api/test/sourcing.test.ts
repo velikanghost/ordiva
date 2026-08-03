@@ -5,9 +5,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionGuard } from "../src/auth/session.guard.js";
 import { loadConfig, type SourcingConfig } from "../src/config.js";
 import { SourcingController } from "../src/sourcing/sourcing.controller.js";
-import type { SourcingPlan, SourcingPlanGenerator } from "../src/sourcing/sourcing.schemas.js";
+import type {
+  SourcingPlan,
+  SourcingPlanGenerator,
+  SupplierSearch
+} from "../src/sourcing/sourcing.schemas.js";
 import { SourcingService } from "../src/sourcing/sourcing.service.js";
-import { SOURCING_CONFIG, SOURCING_PLAN_GENERATOR } from "../src/sourcing/sourcing.tokens.js";
+import {
+  SOURCING_CONFIG,
+  SOURCING_PLAN_GENERATOR,
+  SOURCING_SUPPLIER_SEARCH
+} from "../src/sourcing/sourcing.tokens.js";
 
 const openApps: INestApplication[] = [];
 
@@ -24,6 +32,7 @@ function config(): SourcingConfig {
     CIRCLE_APP_ID: "circle-app-id",
     OPENAI_API_KEY: "openai-test-key",
     OPENAI_MODEL: "gpt-5.6",
+    FIRECRAWL_API_KEY: "firecrawl-test-key",
     CIRCLE_WALLETS_API_URL: "https://api.circle.com",
     ARC_ADAPTER_SELLER_ADDRESS: "0x1111111111111111111111111111111111111111",
     CIRCLE_GATEWAY_FACILITATOR_URL: "https://gateway-api-testnet.circle.com",
@@ -50,6 +59,27 @@ const generatedPlan: SourcingPlan = {
   outreachQuestions: ["What is your lead time for a pilot order?"]
 };
 
+function supplierSearch(): SupplierSearch {
+  return vi.fn<SupplierSearch>()
+    .mockResolvedValueOnce({
+      results: [
+        { title: "Pump One", url: "https://pump-one.example/products", description: "Industrial pump manufacturer" },
+        { title: "Pump Two", url: "https://pump-two.example", description: "Centrifugal pumps" }
+      ],
+      searchId: "search-1",
+      creditsUsed: 1
+    })
+    .mockResolvedValueOnce({
+      results: [
+        { title: "Pump One duplicate", url: "https://www.pump-one.example/about", description: "Duplicate company" },
+        { title: "Pump Three", url: "https://pump-three.example", description: "Rotterdam supplier" }
+      ],
+      searchId: "search-2",
+      creditsUsed: 1
+    })
+    .mockResolvedValue({ results: [], searchId: "search-3", creditsUsed: 1 });
+}
+
 class AuthenticatedGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     context.switchToHttp().getRequest().auth = {
@@ -61,12 +91,13 @@ class AuthenticatedGuard implements CanActivate {
   }
 }
 
-async function createApp(generator: SourcingPlanGenerator) {
+async function createApp(generator: SourcingPlanGenerator, search: SupplierSearch = supplierSearch()) {
   const builder = Test.createTestingModule({
     controllers: [SourcingController],
     providers: [
       { provide: SOURCING_CONFIG, useValue: config() },
       { provide: SOURCING_PLAN_GENERATOR, useValue: generator },
+      { provide: SOURCING_SUPPLIER_SEARCH, useValue: search },
       SourcingService
     ]
   });
@@ -87,9 +118,10 @@ describe("OpenAI sourcing plan boundary", () => {
     expect(loaded.OPENAI_API_KEY).toBe("openai-test-key");
   });
 
-  it("creates a plan while keeping payment and email unauthorized", async () => {
+  it("plans and autonomously discovers distinct suppliers while keeping payment and email unauthorized", async () => {
     const generator = vi.fn<SourcingPlanGenerator>().mockResolvedValue(generatedPlan);
-    const app = await createApp(generator);
+    const search = supplierSearch();
+    const app = await createApp(generator, search);
 
     const response = await request(app.getHttpServer())
       .post("/v1/runs/plan")
@@ -105,20 +137,25 @@ describe("OpenAI sourcing plan boundary", () => {
       supplierMinimum: 3
     }));
     expect(response.body).toMatchObject({
-      status: "plan_ready",
+      status: "research_ready",
       budget: { limit: "$0.25", spent: "$0.00" },
       nextAction: {
-        type: "service_approval_required",
-        adapterId: "firecrawl-search",
-        provider: "Firecrawl",
-        price: "$0.02",
-        network: "eip155:5042002"
+        type: "supplier_verification_pending",
+        supplierCount: 3
       },
+      research: { provider: "Firecrawl", queriesExecuted: 3, creditsUsed: 3, arcPayment: null },
       permissions: {
         paymentAuthorized: false,
         emailAuthorized: false
       }
     });
+    expect(response.body.suppliers).toHaveLength(3);
+    expect(response.body.suppliers.map((supplier: { domain: string }) => supplier.domain)).toEqual([
+      "pump-one.example",
+      "pump-two.example",
+      "pump-three.example"
+    ]);
+    expect(search).toHaveBeenCalledTimes(3);
     expect(response.body.id).toMatch(/^run-[0-9a-f-]+$/);
   });
 
@@ -134,7 +171,7 @@ describe("OpenAI sourcing plan boundary", () => {
     expect(generator).not.toHaveBeenCalled();
   });
 
-  it("rejects a budget that cannot cover the deterministic first service", async () => {
+  it("rejects a budget that cannot cover the deterministic first paid evidence check", async () => {
     const generator = vi.fn<SourcingPlanGenerator>().mockResolvedValue(generatedPlan);
     const app = await createApp(generator);
 
@@ -157,5 +194,22 @@ describe("OpenAI sourcing plan boundary", () => {
       .expect(503);
 
     expect(response.body.message).toContain("Please try again");
+  });
+
+  it("does not advance when autonomous discovery finds fewer than three distinct suppliers", async () => {
+    const generator = vi.fn<SourcingPlanGenerator>().mockResolvedValue(generatedPlan);
+    const search = vi.fn<SupplierSearch>().mockResolvedValue({
+      results: [{ title: "Only Supplier", url: "https://only.example", description: "One result" }],
+      searchId: "search-only",
+      creditsUsed: 1
+    });
+    const app = await createApp(generator, search);
+
+    const response = await request(app.getHttpServer())
+      .post("/v1/runs/plan")
+      .send({ goal: "Find pump suppliers in Rotterdam", budget: "0.25", supplierMinimum: 3 })
+      .expect(503);
+
+    expect(response.body.message).toContain("fewer than 3");
   });
 });

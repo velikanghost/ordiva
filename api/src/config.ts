@@ -40,7 +40,7 @@ export type AccountsConfig = AppConfig & Required<Pick<
   AppConfig,
   "MONGODB_URI" | "AUTH_JWT_SECRET" | "CIRCLE_API_KEY" | "CIRCLE_APP_ID"
 >>;
-export type SourcingConfig = AccountsConfig & Required<Pick<AppConfig, "OPENAI_API_KEY">>;
+export type SourcingConfig = AccountsConfig & Required<Pick<AppConfig, "OPENAI_API_KEY" | "FIRECRAWL_API_KEY">>;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const config = envSchema.parse(env);
@@ -55,7 +55,7 @@ export function accountsConfigured(config: AppConfig): config is AccountsConfig 
 }
 
 export function sourcingConfigured(config: AppConfig): config is SourcingConfig {
-  return accountsConfigured(config) && Boolean(config.OPENAI_API_KEY);
+  return accountsConfigured(config) && Boolean(config.OPENAI_API_KEY && config.FIRECRAWL_API_KEY);
 }
 
 export function commaSeparatedSet(value: string): ReadonlySet<string> {

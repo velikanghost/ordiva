@@ -23,9 +23,35 @@ export interface SourcingPlanGeneratorInput extends CreateSourcingRunInput {
 
 export type SourcingPlanGenerator = (input: SourcingPlanGeneratorInput) => Promise<SourcingPlan>;
 
+export const supplierSearchResultSchema = z.object({
+  results: z.array(z.object({
+    title: z.string(),
+    url: z.string().url(),
+    description: z.string()
+  })),
+  searchId: z.string().nullable(),
+  creditsUsed: z.number().int().nonnegative().nullable()
+});
+
+export type SupplierSearchResult = z.infer<typeof supplierSearchResultSchema>;
+export type SupplierSearch = (input: {
+  query: string;
+  limit: number;
+  country: string;
+}) => Promise<SupplierSearchResult>;
+
+export interface SupplierCandidate {
+  id: string;
+  name: string;
+  url: string;
+  domain: string;
+  description: string;
+  sourceQuery: string;
+}
+
 export interface PlannedSourcingRun {
   id: string;
-  status: "plan_ready";
+  status: "research_ready";
   goal: string;
   supplierMinimum: number;
   budget: {
@@ -33,17 +59,17 @@ export interface PlannedSourcingRun {
     spent: "$0.00";
   };
   plan: SourcingPlan;
-  nextAction: {
-    type: "service_approval_required";
-    adapterId: "firecrawl-search";
+  suppliers: SupplierCandidate[];
+  research: {
     provider: "Firecrawl";
-    price: string;
-    network: "eip155:5042002";
+    queriesExecuted: number;
+    creditsUsed: number | null;
+    arcPayment: null;
+  };
+  nextAction: {
+    type: "supplier_verification_pending";
     description: string;
-    input: {
-      query: string;
-      limit: number;
-    };
+    supplierCount: number;
   };
   permissions: {
     paymentAuthorized: false;

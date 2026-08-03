@@ -31,8 +31,8 @@ export default async function Home({
                 Give the agent a sourcing outcome.
               </h1>
               <p className="mt-7 max-w-[62ch] text-base leading-7 text-muted sm:text-lg">
-                Ordiva researches suppliers, buys only policy-approved evidence on Arc,
-                and waits for you before any outreach leaves the system.
+                Start with autonomous planning and public supplier discovery. Paid evidence
+                on Arc stays policy-controlled, and no outreach leaves without your approval.
               </p>
             </div>
           </div>
