@@ -11,7 +11,7 @@ export class AdapterRegistry {
   constructor(@Inject(ADAPTER_CONFIG) config: AppConfig) {
     this.adapters = createAdapters(config).map((adapter) => ({
       ...adapter,
-      configured: config.ORDIVA_UPSTREAM_MODE === "live" && adapter.configured
+      configured: config.ORDIVA_UPSTREAM_MODE === "disabled" || adapter.configured
     }));
   }
 

@@ -179,7 +179,7 @@ describe("OpenAI sourcing plan boundary", () => {
     expect(response.body.id).toMatch(/^run-[0-9a-f-]+$/);
   });
 
-  it("does not call OpenAI or Firecrawl when live upstreams are disabled", async () => {
+  it("returns mock plan and candidate suppliers without calling OpenAI or Firecrawl when live upstreams are disabled", async () => {
     const generator = vi.fn<SourcingPlanGenerator>().mockResolvedValue(generatedPlan);
     const search = supplierSearch();
     const app = await createApp(generator, search, config({ ORDIVA_UPSTREAM_MODE: "disabled" }));
@@ -191,9 +191,10 @@ describe("OpenAI sourcing plan boundary", () => {
         budget: "0.25",
         supplierMinimum: 3
       })
-      .expect(503);
+      .expect(201);
 
-    expect(response.body.message).toBe("Live supplier discovery is disabled by the operator.");
+    expect(response.body.status).toBe("research_ready");
+    expect(response.body.suppliers).toHaveLength(3);
     expect(generator).not.toHaveBeenCalled();
     expect(search).not.toHaveBeenCalled();
   });

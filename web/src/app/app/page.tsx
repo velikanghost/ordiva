@@ -14,9 +14,10 @@ export default async function AppPage({
   const query = await searchParams;
   return (
     <main className="min-h-screen bg-canvas px-4 py-4 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1480px] overflow-hidden rounded-[16px] border border-line bg-paper">
+      <div className="mx-auto max-w-[1480px] overflow-hidden rounded-[16px] border border-line bg-paper shadow-ledger-lg">
         <header className="flex min-h-16 items-center justify-between gap-4 border-b border-line px-5 sm:px-8">
-          <Link href="/" className="text-[1.15rem] font-semibold tracking-[-0.03em]">
+          <Link href="/" className="text-[1.15rem] font-semibold tracking-[-0.03em] flex items-center gap-2">
+            <span className="grid size-8 place-items-center rounded-lg bg-violet text-white font-mono text-sm font-bold shadow-ledger-sm">O</span>
             Ordiva
           </Link>
           <div className="flex items-center gap-3">
