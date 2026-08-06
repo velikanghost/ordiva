@@ -1,9 +1,10 @@
 import { Module, type DynamicModule } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { AdaptersModule, type AdaptersModuleOptions } from "./adapters/adapters.module.js";
+import { AgentWalletModule } from "./agent-wallet/agent-wallet.module.js";
 import { AppController } from "./app.controller.js";
 import { AuthModule } from "./auth/auth.module.js";
-import { accountsConfigured, sourcingConfigured } from "./config.js";
+import { accountsConfigured, agentWalletConfigured, sourcingConfigured } from "./config.js";
 import { SourcingModule } from "./sourcing/sourcing.module.js";
 
 @Module({})
@@ -17,6 +18,9 @@ export class AppModule {
       );
       if (sourcingConfigured(options.config)) {
         imports.push(SourcingModule.register({ config: options.config, fetch: options.fetch }));
+      }
+      if (agentWalletConfigured(options.config)) {
+        imports.push(AgentWalletModule.register({ config: options.config }));
       }
     }
 

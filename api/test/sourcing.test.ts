@@ -11,6 +11,10 @@ import type {
   SupplierSearch
 } from "../src/sourcing/sourcing.schemas.js";
 import { SourcingService } from "../src/sourcing/sourcing.service.js";
+import { RunsService } from "../src/sourcing/runs.service.js";
+import { formatUsdcExact } from "../src/payments/money.js";
+import type { SourcingRun } from "../src/sourcing/run.schema.js";
+import { VerificationService } from "../src/sourcing/verification.service.js";
 import {
   SOURCING_CONFIG,
   SOURCING_PLAN_GENERATOR,
@@ -34,7 +38,13 @@ function config(overrides: Partial<SourcingConfig> = {}): SourcingConfig {
     OPENAI_API_KEY: "openai-test-key",
     OPENAI_MODEL: "gpt-5.6",
     FIRECRAWL_API_KEY: "firecrawl-test-key",
+    CIRCLE_ENTITY_SECRET: "a".repeat(64),
+    CIRCLE_WALLET_SET_ID: "wallet-set-id",
     CIRCLE_WALLETS_API_URL: "https://api.circle.com",
+    ARC_RPC_URL: "https://rpc.testnet.arc.network",
+    ORDIVA_SELF_URL: "http://127.0.0.1:4100",
+    USDC_ADDRESS: "0x3600000000000000000000000000000000000000",
+    GATEWAY_WALLET_ADDRESS: "0x0077777d7EBA4688BDeF3E311b846F25870A19B9",
     ARC_ADAPTER_SELLER_ADDRESS: "0x1111111111111111111111111111111111111111",
     CIRCLE_GATEWAY_FACILITATOR_URL: "https://gateway-api-testnet.circle.com",
     EMAIL_ALLOWED_RECIPIENTS: "",
@@ -98,12 +108,40 @@ async function createApp(
   search: SupplierSearch = supplierSearch(),
   currentConfig: SourcingConfig = config()
 ) {
+  // Persistence and the paid verification stage are exercised by their own suites;
+  // here they are stubbed so these tests stay focused on planning and discovery.
+  const runs = {
+    // Mirrors the shape `RunsService.create` returns, so assertions here still
+    // describe the contract the browser actually receives.
+    create: vi.fn(async (run: Omit<SourcingRun, "createdAt" | "updatedAt">) => ({
+      id: "6a739b60e915db8c861f5af3",
+      status: run.status,
+      goal: run.goal,
+      supplierMinimum: run.supplierMinimum,
+      budget: {
+        limit: formatUsdcExact(BigInt(run.budgetMicros)),
+        spent: formatUsdcExact(0n),
+        remaining: formatUsdcExact(BigInt(run.budgetMicros))
+      },
+      plan: run.plan,
+      suppliers: run.suppliers,
+      purchases: [],
+      research: run.research,
+      createdAt: new Date().toISOString()
+    })),
+    listForUser: vi.fn(async () => []),
+    view: vi.fn(async () => null),
+    getOwned: vi.fn(async () => null)
+  };
+
   const builder = Test.createTestingModule({
     controllers: [SourcingController],
     providers: [
       { provide: SOURCING_CONFIG, useValue: currentConfig },
       { provide: SOURCING_PLAN_GENERATOR, useValue: generator },
       { provide: SOURCING_SUPPLIER_SEARCH, useValue: search },
+      { provide: RunsService, useValue: runs },
+      { provide: VerificationService, useValue: { verify: vi.fn() } },
       SourcingService
     ]
   });
@@ -158,16 +196,8 @@ describe("OpenAI sourcing plan boundary", () => {
     }));
     expect(response.body).toMatchObject({
       status: "research_ready",
-      budget: { limit: "$0.25", spent: "$0.00" },
-      nextAction: {
-        type: "supplier_verification_pending",
-        supplierCount: 3
-      },
-      research: { provider: "Firecrawl", queriesExecuted: 3, creditsUsed: 3, arcPayment: null },
-      permissions: {
-        paymentAuthorized: false,
-        emailAuthorized: false
-      }
+      budget: { limit: "$0.250000", spent: "$0.000000", remaining: "$0.250000" },
+      research: { provider: "Firecrawl", queriesExecuted: 3, creditsUsed: 3 }
     });
     expect(response.body.suppliers).toHaveLength(3);
     expect(response.body.suppliers.map((supplier: { domain: string }) => supplier.domain)).toEqual([
@@ -175,11 +205,13 @@ describe("OpenAI sourcing plan boundary", () => {
       "pump-two.example",
       "pump-three.example"
     ]);
+    // Candidates stay unverified until paid evidence has actually been gathered.
+    expect(response.body.suppliers.every((supplier: { verified: boolean }) => !supplier.verified)).toBe(true);
+    expect(response.body.purchases).toEqual([]);
     expect(search).toHaveBeenCalledTimes(3);
-    expect(response.body.id).toMatch(/^run-[0-9a-f-]+$/);
   });
 
-  it("does not call OpenAI or Firecrawl when live upstreams are disabled", async () => {
+  it("returns mock plan and candidate suppliers without calling OpenAI or Firecrawl when live upstreams are disabled", async () => {
     const generator = vi.fn<SourcingPlanGenerator>().mockResolvedValue(generatedPlan);
     const search = supplierSearch();
     const app = await createApp(generator, search, config({ ORDIVA_UPSTREAM_MODE: "disabled" }));
@@ -191,11 +223,34 @@ describe("OpenAI sourcing plan boundary", () => {
         budget: "0.25",
         supplierMinimum: 3
       })
-      .expect(503);
+      .expect(201);
 
-    expect(response.body.message).toBe("Live supplier discovery is disabled by the operator.");
+    expect(response.body.status).toBe("research_ready");
+    expect(response.body.suppliers).toHaveLength(3);
     expect(generator).not.toHaveBeenCalled();
     expect(search).not.toHaveBeenCalled();
+  });
+
+  it("keeps only as many candidates as the run asked for", async () => {
+    // Discovery routinely returns far more than requested. Every extra candidate
+    // costs three paid evidence checks, so the surplus must not reach the run.
+    const generator = vi.fn<SourcingPlanGenerator>().mockResolvedValue(generatedPlan);
+    const generous = vi.fn<SupplierSearch>().mockResolvedValue({
+      results: Array.from({ length: 12 }, (_, index) => ({
+        title: `Pump ${index}`,
+        url: `https://pump-${index}.example`,
+        description: "Industrial pump supplier"
+      })),
+      searchId: "search-wide",
+      creditsUsed: 1
+    });
+
+    const response = await request((await createApp(generator, generous)).getHttpServer())
+      .post("/v1/runs/plan")
+      .send({ goal: "Find pump suppliers in Rotterdam", budget: "2", supplierMinimum: 3 })
+      .expect(201);
+
+    expect(response.body.suppliers).toHaveLength(3);
   });
 
   it("rejects fewer than three suppliers before calling the model", async () => {

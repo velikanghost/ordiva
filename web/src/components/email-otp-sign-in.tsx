@@ -1,9 +1,10 @@
 "use client";
 
-import { Check, CircleAlert, LoaderCircle, LockKeyhole, WalletCards } from "lucide-react";
+import { ArrowRight, Check, CircleAlert, LoaderCircle, LockKeyhole, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { apiJson } from "@/lib/api";
+import { CopyableAddress } from "@/components/copyable-address";
 import { useSessionStore } from "@/lib/session-store";
 
 type Phase = "idle" | "starting" | "verifying" | "creating-wallet" | "complete" | "error";
@@ -46,9 +47,9 @@ function messageForPhase(phase: Phase): string {
     case "starting":
       return "Requesting a secure email challenge…";
     case "verifying":
-      return "Complete the one-time code in Circle’s secure window.";
+      return "Complete the one-time code in Circle's secure window.";
     case "creating-wallet":
-      return "Finish the wallet challenge in Circle’s secure window.";
+      return "Finish the wallet challenge in Circle's secure window.";
     case "complete":
       return "Your Arc wallet is ready.";
     case "error":
@@ -64,6 +65,7 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [walletIsNew, setWalletIsNew] = useState(true);
 
   const busy = ["starting", "verifying", "creating-wallet"].includes(phase);
 
@@ -111,6 +113,7 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
       });
 
       if (session.walletAction.required) {
+        setWalletIsNew(true);
         const { challengeId } = session.walletAction;
         setPhase("creating-wallet");
         sdk.setAuthentication(circleAuth);
@@ -131,10 +134,17 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
           if (session.wallet) break;
           await new Promise((resolve) => window.setTimeout(resolve, 700));
         }
+      } else {
+        setWalletIsNew(false);
       }
 
       if (!session.wallet) throw new Error("Circle completed the challenge, but the Arc wallet is not ready yet. Try again in a moment.");
-      acceptSession({ token: session.sessionToken, email, wallet: session.wallet });
+      acceptSession({
+        token: session.sessionToken,
+        email,
+        wallet: session.wallet,
+        circleAuth,
+      });
       setWalletAddress(session.wallet.address);
       setPhase("complete");
     } catch (caught) {
@@ -144,6 +154,28 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
   }
 
   if (phase === "complete" && walletAddress) {
+    if (!walletIsNew) {
+      return (
+        <div className="proof-enter" role="status">
+          <span className="grid size-12 place-items-center rounded-full bg-success-wash text-success">
+            <Check aria-hidden="true" className="size-5" />
+          </span>
+          <h2 className="mt-7 text-3xl font-semibold tracking-[-0.03em]">Signed in</h2>
+          <p className="mt-3 text-base leading-7 text-muted">{email}</p>
+          <div className="mt-6 flex items-center gap-3 rounded-[12px] border border-line px-4 py-4">
+            <WalletCards aria-hidden="true" className="size-4 shrink-0 text-muted" />
+            <CopyableAddress address={walletAddress} truncate className="text-sm text-muted" />
+            <span className="ml-auto rounded-full bg-success-wash px-2.5 py-1 text-[0.68rem] font-semibold text-success">
+              Connected
+            </span>
+          </div>
+          <Link href={returnTo} className="mt-8 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] bg-violet px-5 font-semibold text-white transition-colors hover:bg-violet-dark">
+            Continue <ArrowRight aria-hidden="true" className="size-4" />
+          </Link>
+        </div>
+      );
+    }
+
     return (
       <div className="proof-enter" role="status">
         <span className="grid size-12 place-items-center rounded-full bg-success-wash text-success">
@@ -153,7 +185,7 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
         <p className="mt-3 text-base leading-7 text-muted">One Arc Testnet EOA is linked to this Ordiva account.</p>
         <div className="mt-8 border-y border-line py-5">
           <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Wallet address</span>
-          <p className="mt-2 break-all font-mono text-sm leading-6">{walletAddress}</p>
+          <CopyableAddress address={walletAddress} className="mt-2 text-sm leading-6" />
         </div>
         <Link href={returnTo} className="mt-8 inline-flex min-h-12 w-full items-center justify-center rounded-[12px] bg-ink px-5 font-semibold text-paper hover:bg-violet">
           Continue
@@ -205,7 +237,7 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
         {busy ? "Continue in Circle" : phase === "error" ? "Try again" : "Send one-time code"}
       </button>
       <p className="mt-5 text-center text-xs leading-5 text-muted">
-        Circle’s secure SDK handles the one-time code and wallet PIN. Sensitive wallet credentials are never stored by Ordiva.
+        Circle&apos;s secure SDK handles the one-time code and wallet PIN. Sensitive wallet credentials are never stored by Ordiva.
       </p>
     </form>
   );

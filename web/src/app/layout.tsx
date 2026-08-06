@@ -1,6 +1,18 @@
 import type { Metadata } from "next";
-import "@fontsource-variable/figtree";
+import { Outfit, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+
+const outfit = Outfit({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -20,14 +32,23 @@ FORM: Evidence Split Workbench; approved comp .impeccable/mocks/evidence-split.w
 FINISH: Unreviewed and undocumented is unfinished; complete the finish review, verdict, and DESIGN.md.
 -->`;
 
+const themeScript = `(function(){try{var t=localStorage.getItem('ordiva.theme.v1');var d=t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d){document.documentElement.classList.add('dark');}}catch(e){}})()`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full">
+    <html
+      lang="en"
+      className={`${outfit.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
+      <body className="min-h-full font-sans bg-canvas text-ink">
         <template
           data-direction-contract
           dangerouslySetInnerHTML={{ __html: directionContract }}

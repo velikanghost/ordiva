@@ -2,7 +2,7 @@
 
 > Your agent spends well, and you can see why.
 
-Ordiva is an agentic supplier-sourcing platform built for the **Agentic Economy** track of the Arc Hackathon. A user gives the agent a real-world procurement goal and a USDC budget. Today, Ordiva plans the work and discovers supplier candidates; its paid service rail is designed to buy stronger evidence while exposing the reason, policy result, price, and receipt behind every purchase.
+Ordiva is an agentic supplier-sourcing platform built for the **Agentic Economy** track of the Arc Hackathon. A user gives the agent a real-world procurement goal and a USDC budget, and grants that budget once. The agent then plans the work, discovers supplier candidates, and **buys evidence about each one with real USDC nanopayments on Arc — signed by its own wallet, with no human present.** Every purchase exposes its reason, policy result, price, and settlement receipt.
 
 The central idea is simple: **the model provides judgment; deterministic code controls authority**.
 
@@ -28,16 +28,17 @@ The primary demonstration goal is:
 
 The current run flow:
 
-1. The user signs in with an email OTP through Circle.
-2. Circle creates or returns one user-controlled EOA on Arc Testnet.
-3. The user enters a sourcing outcome and service budget.
-4. OpenAI generates a constrained, schema-validated research plan.
-5. Ordiva automatically executes multiple Firecrawl discovery queries.
-6. Results are normalized and deduplicated by supplier domain.
-7. The run advances only when at least three distinct candidates are available.
-8. The workbench shows the plan, queries, candidates, budget state, and next controlled action.
+1. The user signs in with an email OTP through Circle and receives one user-controlled EOA on Arc Testnet.
+2. Ordiva provisions the user's **agent wallet** — an Arc EOA it operates on their behalf.
+3. The user grants a budget **once**, moving USDC from their own wallet into the agent's Circle Gateway balance. This is the only human act in the money path.
+4. The user enters a sourcing outcome and service budget.
+5. OpenAI generates a constrained, schema-validated research plan.
+6. Ordiva executes multiple Firecrawl discovery queries at zero wallet charge.
+7. Results are normalized and deduplicated by supplier domain, capped at the requested candidate count.
+8. **The agent buys evidence for each candidate** — scrape, company enrichment, contact discovery — paying per call from its own escrowed balance, unattended.
+9. The workbench shows the live spend meter and a decision ledger: every purchase, its reason, price, outcome, and settlement reference.
 
-Initial public-web discovery is explicitly reported as a **zero-wallet-charge preview step**. Paid Arc verification and email delivery are not claimed until the corresponding authorization and receipt exist.
+Public-web discovery is explicitly reported as a **zero-wallet-charge step**. Email delivery is not claimed until the corresponding authorization and receipt exist.
 
 ## Why this belongs in the Agentic Economy
 
@@ -69,18 +70,46 @@ Arc is not a decorative chain choice in Ordiva. It is the settlement network acc
 
 ## Verified nanopayment proof
 
-Before building the Ordiva adapter layer, the payment rail was validated against a real third-party QuickNode endpoint on Arc Testnet.
+Measured on Arc Testnet, 6 August 2026, using the product's own code paths.
 
 | Measurement | Result |
 |---|---:|
-| Gateway balance before | `$0.242806` |
-| Gateway balance after | `$0.242706` |
-| Exact balance delta | `$0.0001` |
-| HTTP response | `200` |
-| Payment round trip | `2,202 ms` |
-| Settlement reference | returned by Circle Gateway |
+| Payments settled by the agent | `60` across two runs |
+| Agent Gateway balance | `$10.000000` → `$9.540000` |
+| One 10-candidate run | 30 payments, `$0.21` of a `$2.00` budget |
+| Smallest payment | `$0.005000` |
+| Gas paid by the agent | `$0.00` |
+| Gas paid by the user, one-time funding | `$0.00367` |
+| Human interactions while spending | `0` |
 
-The response contained a real RPC result. The balance debit and settlement reference confirmed that the purchase was authorized through Gateway rather than simulated in the UI.
+Every purchase returned a distinct Circle Gateway settlement reference and a SHA-256 hash
+of the response. Balances are read back from Circle's Gateway API rather than the
+`availableBalance` view on the Gateway contract — x402 payments are off-chain
+authorisations settled in batches, so the contract view lags by a whole batch and would
+report a spend meter frozen at the deposit amount.
+
+## Why this needs Arc
+
+A run moves `$0.0675` of value across nine service calls. The individual purchases are
+half a cent to a cent each — below the point where conventional onchain settlement makes
+any sense.
+
+| | Ordiva on Arc | Nine ordinary L1 transfers |
+|---|---:|---:|
+| Value moved | `$0.0675` | `$0.0675` |
+| Gas paid by the agent | `$0.00` | 9 × gas |
+| Onchain transactions by the agent | `0` | `9` |
+
+The agent's payments are **EIP-3009 authorisations signed off-chain** and batch-settled by
+Circle Gateway, so it pays no gas and writes to the chain zero times. The only gas in the
+whole flow is the user's one-time funding deposit: **`$0.00367`, measured**.
+
+Assume a conservative `$0.05` per transfer on a conventional L1 — a figure that has been
+far higher in practice. Nine settlements would cost `$0.45`, or **6.7× the value being
+moved**. The economics do not merely get worse; they invert. An agent that must pay more in
+gas than the data costs cannot make fine-grained purchasing decisions at all, which is
+precisely the judgment Ordiva exists to exercise. USDC-denominated gas and batched Gateway
+settlement are what make per-call buying viable.
 
 ## Architecture
 
@@ -104,12 +133,12 @@ flowchart LR
     A --> M[(MongoDB users and wallets)]
 ```
 
-There are two deliberately separate paths:
+Two paths, now connected:
 
-1. **The current run path** plans and performs zero-wallet-charge supplier discovery so the operator receives real candidates immediately.
+1. **The run path** plans, performs zero-wallet-charge discovery, then buys evidence for each candidate through the paid rail.
 2. **The paid service rail** exposes conventional APIs behind Arc-only x402 endpoints with pre-payment validation and normalized receipts.
 
-The remaining bridge is an explicit Circle wallet signing flow that lets a user's own EOA purchase a paid verification from the Ordiva adapter rail. Ordiva does not use a shared platform buyer wallet.
+The bridge between them is the agent wallet: an Ordiva-operated Arc EOA, funded by its own user, that signs each payment. Ordiva does not use a shared platform buyer wallet and does not fund anyone's agent.
 
 ## Judgment and authority
 
@@ -117,13 +146,17 @@ The remaining bridge is an explicit Circle wallet signing flow that lets a user'
 |---|---|---|
 | Decompose the sourcing goal | LLM | Implemented |
 | Generate discovery and evidence requirements | LLM | Implemented |
-| Recommend a paid evidence purchase | LLM | Next |
-| Choose whether to retry, switch, or stop | LLM plus deterministic limits | Next |
-| Enforce the Arc network | Deterministic code | Implemented on adapter routes |
-| Enforce allowed services and sellers | Deterministic code | Service registry implemented; buyer seller policy next |
-| Enforce the budget and exact price | Deterministic code | Adapter price enforced; run ledger next |
+| Choose which evidence to buy per candidate | Deterministic code | Implemented |
+| Enforce the Arc network | Deterministic code | Implemented, before signing |
+| Enforce allowed services and sellers | Deterministic code | Implemented, before signing |
+| Enforce the budget and exact price | Deterministic code | Implemented, before signing |
+| Stop when the budget is exhausted | Deterministic code | Implemented |
 | Validate request and response schemas | Deterministic code | Implemented |
 | Authorize email recipients | Deterministic code plus explicit user approval | Allowlist implemented; run approval next |
+
+The budget gate runs **before any signature exists**, so a refused purchase leaves no
+authorisation behind. Every refusal is recorded on the run with its reason — what the agent
+declined to buy is part of the record, not an omission from it.
 
 Fetched pages are treated as evidence, never instructions. The model receives bounded content and returns constrained structured output.
 
@@ -140,7 +173,13 @@ Ordiva wraps conventional APIs in a consistent, discoverable payment interface.
 | `POST /v1/auth/email/start` | Start the Circle email-OTP flow |
 | `POST /v1/auth/session` | Validate the Circle user token and create an Ordiva session |
 | `GET /v1/auth/me` | Return the authenticated user and public Arc wallet |
-| `POST /v1/runs/plan` | Generate a plan and autonomously discover supplier candidates |
+| `POST /v1/runs/plan` | Generate a plan, discover candidates, and persist the run |
+| `GET /v1/runs` | List the caller's runs |
+| `GET /v1/runs/:runId` | Return one run with its full purchase ledger |
+| `POST /v1/runs/:runId/verify` | Buy evidence for every candidate, unattended |
+| `GET /v1/agent-wallet` | Agent address and live Gateway spending balance |
+| `POST /v1/agent-wallet/fund/approve` | Challenge permitting the Gateway to move USDC |
+| `POST /v1/agent-wallet/fund/deposit` | Challenge crediting the agent's Gateway balance |
 | `GET /v1/catalog` | Return the Arc adapter catalog, prices, availability, and schemas |
 
 Account and sourcing routes are enabled only when their required environment variables are configured. The adapter catalog remains available so missing upstream configuration is visible rather than silently ignored.
@@ -150,10 +189,10 @@ Account and sourcing routes are enabled only when their required environment var
 | Route | Capability | Upstream | Default price |
 |---|---|---|---:|
 | `POST /v1/suppliers/tavily-search` | Supplier search | Tavily | `$0.01` |
-| `POST /v1/suppliers/firecrawl-search` | Supplier search | Firecrawl | `$0.02` |
-| `POST /v1/evidence/firecrawl-scrape` | Company evidence | Firecrawl | `$0.02` |
-| `POST /v1/company/apollo-enrich` | Company enrichment | Apollo | `$0.03` |
-| `POST /v1/contacts/firecrawl-extract` | Public contact discovery | Firecrawl | `$0.05` |
+| `POST /v1/suppliers/firecrawl-search` | Supplier search | Firecrawl | `$0.01` |
+| `POST /v1/evidence/firecrawl-scrape` | Company evidence | Firecrawl | `$0.005` |
+| `POST /v1/company/apollo-enrich` | Company enrichment | Apollo | `$0.0075` |
+| `POST /v1/contacts/firecrawl-extract` | Public contact discovery | Firecrawl | `$0.01` |
 | `POST /v1/email/resend-send` | Allowlisted email delivery | Resend | `$0.01` |
 
 `GET /v1/catalog` is free. It returns the network, seller address, configured availability, prices, and JSON Schemas for every adapter.
@@ -170,7 +209,15 @@ Unavailable services, malformed inputs, unsafe scrape targets, and disallowed em
 
 ## Authentication and wallet model
 
-Ordiva is a multi-user product. Each account is associated with exactly one Circle user-controlled EOA on `ARC-TESTNET`.
+Ordiva is a multi-user product. Each account has **two Arc EOAs with distinct roles**:
+
+| Wallet | Custody | Role |
+|---|---|---|
+| User wallet | Circle **user**-controlled — the user holds the keys | Identity, and funding the agent |
+| Agent wallet | Circle **developer**-controlled — Ordiva operates it | Signs the agent's payments |
+
+Both must be EOAs. EIP-3009 `TransferWithAuthorization` is verified with `ecrecover`, which
+a smart-contract account cannot satisfy.
 
 Authentication works as follows:
 
@@ -183,7 +230,21 @@ Authentication works as follows:
 
 Ordiva stores the Circle user ID and public wallet metadata. It does **not** store the OTP, Circle user token, encryption key, PIN, key shares, or private key.
 
-Wallet ownership alone does not grant the backend signing authority. Paid agent execution requires an explicit signing or delegation boundary.
+### Granting spending authority
+
+The user moves USDC from their own wallet into their agent's Gateway balance: `approve` on
+USDC, then `depositFor` on the Gateway contract, both PIN-approved through Circle's
+challenge flow. That is the single human act in the money path. Afterwards the agent signs
+every payment itself, and the escrowed balance is a **physical ceiling** — it cannot spend
+more than was deposited, whatever else goes wrong.
+
+**The honest tradeoff:** the agent wallet is operated by Ordiva, so moving USDC into it is
+a step down from self-custody to escrow with Ordiva as operator. Only the run budget is ever
+moved, never a standing balance. Returning unspent budget to the user's wallet is
+outstanding work and must ship before this is production-ready.
+
+This is **not** bring-your-own-agent. Ordiva provisions the agent wallet; the user brings
+the budget, not the keys.
 
 ## Safety properties
 
@@ -195,7 +256,10 @@ Wallet ownership alone does not grant the backend signing authority. Paid agent 
 - Email requires an exact recipient or domain allowlist.
 - Resend requests require an idempotency key.
 - A paid upstream failure retains its payment receipt.
-- One wallet is enforced per user.
+- One user wallet and one agent wallet are enforced per user.
+- The agent can only spend what its user escrowed; the balance is a physical ceiling.
+- The budget gate runs before any signature exists, so a refused purchase leaves no reusable authorisation.
+- Refused and failed purchases are recorded with their reasons, not discarded.
 - Supplier candidates remain labeled unverified until evidence exists.
 - The UI never claims payment, verification, settlement, or email delivery without proof.
 
@@ -295,6 +359,12 @@ To use a different API origin, set `ORDIVA_API_URL` for the web process.
 | `AUTH_JWT_SECRET` | Accounts | Signs Ordiva sessions |
 | `CIRCLE_API_KEY` | Accounts | Circle developer API access |
 | `CIRCLE_APP_ID` | Accounts | Circle Web SDK application |
+| `CIRCLE_ENTITY_SECRET` | Agent wallets | Authorises developer-controlled wallet operations. Back up with its recovery file — losing both permanently disables agent wallets for the account |
+| `CIRCLE_WALLET_SET_ID` | Agent wallets | Wallet set holding the agent wallets |
+| `ARC_RPC_URL` | Agent wallets | Arc Testnet RPC, for owner balance and allowance reads |
+| `USDC_ADDRESS` | Agent wallets | USDC token on Arc |
+| `GATEWAY_WALLET_ADDRESS` | Agent wallets | Circle Gateway escrow contract |
+| `ORDIVA_SELF_URL` | Verification | Where the API reaches its own paid adapter routes |
 | `OPENAI_API_KEY` | Sourcing | Structured plan generation |
 | `OPENAI_MODEL` | Optional | Overrides the configured OpenAI model |
 | `FIRECRAWL_API_KEY` | Sourcing | Autonomous supplier discovery and evidence |
@@ -329,37 +399,40 @@ The current repository passes:
 
 - TypeScript type-checking;
 - ESLint;
-- 27 API integration tests;
+- 78 API tests;
 - the NestJS production build;
 - and the Next.js production build on Node.js 22.
 
-The tests cover Circle authentication boundaries, one-wallet enforcement, adapter validation, Arc-only 402 challenges, normalized provider responses, supplier deduplication, the three-candidate gate, email allowlists, idempotency, and paid upstream failure receipts.
+Alongside the original coverage — Circle authentication boundaries, one-wallet enforcement, adapter validation, Arc-only 402 challenges, normalized provider responses, supplier deduplication, email allowlists, idempotency, and paid upstream failure receipts — the tests now cover the payment path itself:
+
+- the agent signer's typed-data handling, including the `EIP712Domain` entry Circle requires and the `bigint` serialisation the batching SDK forces;
+- rejection of any signature that is not 65-byte ECDSA, so a smart-contract account fails loudly rather than at the facilitator;
+- the budget gate refusing on budget, adapter, network, and recipient grounds **before a signature exists**;
+- funding challenge ordering, and that `approve` targets the USDC token while `depositFor` targets the Gateway;
+- the verification loop's spend accumulation, decline handling, evidence extraction, and candidate cap.
 
 ## Current MVP boundary
 
 ### Implemented
 
-- Circle email-OTP accounts with one Arc EOA per user
-- MongoDB user and public wallet records
-- OpenAI structured sourcing plans
-- autonomous multi-query Firecrawl discovery
-- at least three deduplicated supplier candidates
-- six Arc-only x402 seller routes
-- pre-payment schemas and safety checks
-- normalized results and payment receipts
+- Circle email-OTP accounts, with one user wallet and one agent wallet per user
+- user-funded agent Gateway balance via `approve` + `depositFor`
+- **agent-signed Arc x402 payments** — 60 settled in live testing
+- deterministic budget gate, enforced before signing
+- MongoDB sourcing runs with a complete purchase ledger, ownership enforced
+- OpenAI structured sourcing plans and autonomous Firecrawl discovery
+- paid evidence verification per candidate: scrape, enrichment, contact discovery
+- six Arc-only x402 seller routes, all priced at or below `$0.01`
+- operator workbench with a live spend meter and decision ledger
 - allowlisted, idempotent Resend adapter
-- responsive operator workbench
 
 ### Next
 
-- persist sourcing runs and enforce run ownership
-- connect the user's Circle EOA to an explicit x402 buyer-signing flow
-- purchase supplier verification through the Ordiva adapter rail
-- store the decision, exact spend, evidence, and settlement receipt
+- return unspent budget from the agent's Gateway balance to the user's wallet
 - create run-connected email drafts and approval records
 - send only after recipient-level approval
 
-This boundary is intentional and visible in the product. Ordiva does not present zero-charge discovery as an onchain purchase, and it does not claim autonomous signing authority that has not been granted.
+This boundary is intentional and visible in the product. Ordiva does not present zero-charge discovery as an onchain purchase, and it names its custody tradeoff rather than implying the agent wallet is self-custodied.
 
 ## License
 

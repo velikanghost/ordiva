@@ -18,6 +18,20 @@ function errorMessage(body: unknown, status: number): string {
   return `Request failed with status ${status}`;
 }
 
+/**
+ * Call a session-guarded endpoint with the Ordiva bearer token attached.
+ *
+ * @param path - API path below `/api/backend`.
+ * @param token - The Ordiva session token.
+ * @param init - Standard fetch options.
+ */
+export async function apiAuthJson<T>(path: string, token: string, init?: RequestInit): Promise<T> {
+  return apiJson<T>(path, {
+    ...init,
+    headers: { ...init?.headers, authorization: `Bearer ${token}` },
+  });
+}
+
 export async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/backend${path}`, {
     ...init,
