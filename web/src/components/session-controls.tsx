@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { LogOut, WalletCards } from "lucide-react";
+import { LayoutDashboard, LogOut, WalletCards } from "lucide-react";
 import { useEffect } from "react";
 import { useSessionStore } from "@/lib/session-store";
+import { CopyableAddress } from "@/components/copyable-address";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export function SessionControls({ compact = false }: { compact?: boolean }) {
@@ -39,11 +40,19 @@ export function SessionControls({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <ThemeToggle />
+      <Link
+        href="/app"
+        className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-line-strong px-4 text-sm font-semibold transition-colors hover:border-ink hover:bg-ink hover:text-paper"
+      >
+        <LayoutDashboard aria-hidden="true" className="size-4" /> Workspace
+      </Link>
       <span className="hidden text-right sm:block">
         <span className="block text-xs font-semibold">{session.email}</span>
-        <span className="block font-mono text-[0.68rem] text-muted">
-          {session.wallet.address.slice(0, 6)}…{session.wallet.address.slice(-4)}
-        </span>
+        <CopyableAddress
+          address={session.wallet.address}
+          truncate
+          className="text-[0.68rem] text-muted"
+        />
       </span>
       <button
         type="button"

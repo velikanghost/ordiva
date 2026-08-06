@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Check, LoaderCircle, ShieldCheck, WalletCards } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiJson, ApiError } from "@/lib/api";
-import { savePlannedRun, type PlannedSourcingRun } from "@/lib/run";
+import type { SourcingRun } from "@/lib/run";
 import { useSessionStore } from "@/lib/session-store";
 
 export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: string; initialBudget?: string }) {
@@ -38,12 +38,13 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
         setError(null);
         setIsRunning(true);
         try {
-          const run = await apiJson<PlannedSourcingRun>("/v1/runs/plan", {
+          // The run is persisted server-side, so the workbench reads it back by id
+          // rather than carrying it through the browser.
+          const run = await apiJson<SourcingRun>("/v1/runs/plan", {
             method: "POST",
             headers: { authorization: `Bearer ${session.token}` },
             body: JSON.stringify({ goal: goal.trim(), budget, supplierMinimum: 3 }),
           });
-          savePlannedRun(run);
           router.push(`/runs/${run.id}`);
         } catch (caught) {
           if (caught instanceof ApiError && caught.status === 401) {

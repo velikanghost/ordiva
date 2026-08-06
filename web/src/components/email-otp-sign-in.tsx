@@ -4,6 +4,7 @@ import { ArrowRight, Check, CircleAlert, LoaderCircle, LockKeyhole, WalletCards 
 import Link from "next/link";
 import { useState } from "react";
 import { apiJson } from "@/lib/api";
+import { CopyableAddress } from "@/components/copyable-address";
 import { useSessionStore } from "@/lib/session-store";
 
 type Phase = "idle" | "starting" | "verifying" | "creating-wallet" | "complete" | "error";
@@ -138,7 +139,12 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
       }
 
       if (!session.wallet) throw new Error("Circle completed the challenge, but the Arc wallet is not ready yet. Try again in a moment.");
-      acceptSession({ token: session.sessionToken, email, wallet: session.wallet });
+      acceptSession({
+        token: session.sessionToken,
+        email,
+        wallet: session.wallet,
+        circleAuth,
+      });
       setWalletAddress(session.wallet.address);
       setPhase("complete");
     } catch (caught) {
@@ -158,9 +164,7 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
           <p className="mt-3 text-base leading-7 text-muted">{email}</p>
           <div className="mt-6 flex items-center gap-3 rounded-[12px] border border-line px-4 py-4">
             <WalletCards aria-hidden="true" className="size-4 shrink-0 text-muted" />
-            <span className="font-mono text-sm text-muted">
-              {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
-            </span>
+            <CopyableAddress address={walletAddress} truncate className="text-sm text-muted" />
             <span className="ml-auto rounded-full bg-success-wash px-2.5 py-1 text-[0.68rem] font-semibold text-success">
               Connected
             </span>
@@ -181,7 +185,7 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
         <p className="mt-3 text-base leading-7 text-muted">One Arc Testnet EOA is linked to this Ordiva account.</p>
         <div className="mt-8 border-y border-line py-5">
           <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Wallet address</span>
-          <p className="mt-2 break-all font-mono text-sm leading-6">{walletAddress}</p>
+          <CopyableAddress address={walletAddress} className="mt-2 text-sm leading-6" />
         </div>
         <Link href={returnTo} className="mt-8 inline-flex min-h-12 w-full items-center justify-center rounded-[12px] bg-ink px-5 font-semibold text-paper hover:bg-violet">
           Continue

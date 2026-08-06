@@ -1,0 +1,1 @@
+export const AGENT_WALLET_CONFIG = Symbol("AGENT_WALLET_CONFIG");

@@ -33,6 +33,10 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     PORT: 4100,
     ORDIVA_UPSTREAM_MODE: "live",
     CIRCLE_WALLETS_API_URL: "https://api.circle.com",
+    ARC_RPC_URL: "https://rpc.testnet.arc.network",
+    ORDIVA_SELF_URL: "http://127.0.0.1:4100",
+    USDC_ADDRESS: "0x3600000000000000000000000000000000000000",
+    GATEWAY_WALLET_ADDRESS: "0x0077777d7EBA4688BDeF3E311b846F25870A19B9",
     ARC_ADAPTER_SELLER_ADDRESS: "0x1111111111111111111111111111111111111111",
     CIRCLE_GATEWAY_FACILITATOR_URL: "https://gateway-api-testnet.circle.com",
     TAVILY_API_KEY: "tavily-test",
@@ -111,7 +115,9 @@ describe("Arc adapter service", () => {
         verifyingContract: "0x0077777d7eba4688bdef3e311b846f25870a19b9"
       }
     });
-  });
+    // Reaches Circle's live facilitator, so latency is not ours to control; observed
+    // between 0.9s and 4.8s against the 5s default.
+  }, 20_000);
 
   it("rejects an unavailable adapter before requesting payment", async () => {
     const charged = vi.fn();

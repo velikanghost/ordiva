@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 .env.local
+recovery/
 coverage/
 *.log
 .DS_Store
@@ -12,3 +13,4 @@ CONTEXT.md
 DESIGN.md
 PRODUCT.md
 docs
+recovery/

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CircleDot } from "lucide-react";
+import { AgentWalletPanel } from "@/components/agent-wallet-panel";
 import { GoalComposer } from "@/components/goal-composer";
 import { SessionControls } from "@/components/session-controls";
 
@@ -40,8 +41,9 @@ export default async function AppPage({
               </p>
             </div>
           </div>
-          <div className="border-t border-line p-5 sm:p-8 lg:border-t-0 lg:p-12">
+          <div className="flex flex-col gap-8 border-t border-line p-5 sm:p-8 lg:border-t-0 lg:p-12">
             <GoalComposer initialGoal={query.goal} initialBudget={query.budget} />
+            <AgentWalletPanel />
           </div>
         </section>
 

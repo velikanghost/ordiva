@@ -10,6 +10,18 @@ export interface OrdivaSession {
     accountType: "EOA";
     state: string;
   };
+  /**
+   * Circle's short-lived material, needed to authorise wallet challenges such as
+   * funding the agent.
+   *
+   * Held only by the browser and only in `sessionStorage`, never sent to or stored
+   * by Ordiva's API beyond the single request that uses it. Circle expires these
+   * after roughly an hour, after which funding prompts a fresh sign-in.
+   */
+  circleAuth?: {
+    userToken: string;
+    encryptionKey: string;
+  };
 }
 
 export function saveSession(session: OrdivaSession): void {
