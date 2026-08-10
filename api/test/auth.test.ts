@@ -204,6 +204,59 @@ describe("Circle email authentication", () => {
     expect(String(fetchMock.mock.calls[3]?.[0])).toBe("https://api.circle.com/v1/w3s/user/wallets");
   });
 
+  it("checks wallet provisioning without issuing another creation challenge", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(await circleResponse({ data: { id: user.circleUserId, status: "ENABLED" } }))
+      .mockResolvedValueOnce(await circleResponse({ data: { wallets: [] } }))
+      .mockResolvedValueOnce(await circleResponse({ data: { id: user.circleUserId, status: "ENABLED" } }))
+      .mockResolvedValueOnce(await circleResponse({ data: { wallets: [{
+        id: wallet.id,
+        address: wallet.address,
+        blockchain: "ARC-TESTNET",
+        accountType: "EOA",
+        state: "LIVE"
+      }] } }));
+    const setup = await createAuthApp(fetchMock);
+    const tokenService = setup.testingModule.get(SessionTokenService);
+    const sessionToken = await tokenService.issueSession(user.id, user.circleUserId, user.email);
+
+    const pending = await request(setup.app.getHttpServer())
+      .post("/v1/auth/wallet/finalize")
+      .set("authorization", `Bearer ${sessionToken}`)
+      .send({ circleUserToken: "circle-user-token" })
+      .expect(200);
+    expect(pending.body).toEqual({ wallet: null });
+
+    const complete = await request(setup.app.getHttpServer())
+      .post("/v1/auth/wallet/finalize")
+      .set("authorization", `Bearer ${sessionToken}`)
+      .send({ circleUserToken: "circle-user-token" })
+      .expect(200);
+    expect(complete.body).toEqual({ wallet });
+    expect(setup.wallets.syncOneForUser).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).endsWith("/v1/w3s/user/initialize"))).toBe(true);
+    expect(fetchMock.mock.calls.every(([url]) => !String(url).endsWith("/v1/w3s/user/wallets"))).toBe(true);
+  });
+
+  it("rejects wallet finalization for a different Circle user", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(await circleResponse({ data: { id: "circle-user-2", status: "ENABLED" } }));
+    const setup = await createAuthApp(fetchMock);
+    const sessionToken = await setup.testingModule.get(SessionTokenService)
+      .issueSession(user.id, user.circleUserId, user.email);
+
+    const response = await request(setup.app.getHttpServer())
+      .post("/v1/auth/wallet/finalize")
+      .set("authorization", `Bearer ${sessionToken}`)
+      .send({ circleUserToken: "other-circle-user-token" })
+      .expect(401);
+
+    expect(response.body.message).toContain("does not match session");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(setup.wallets.syncOneForUser).not.toHaveBeenCalled();
+  });
+
   it("rejects an existing Arc SCA instead of silently creating a second wallet", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(await circleResponse({ data: { id: user.circleUserId, status: "ENABLED" } }))

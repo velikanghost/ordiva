@@ -93,6 +93,7 @@ export function LandingAuthCta({
               <EmailOtpSignIn
                 returnTo="/app"
                 onExternalChallenge={handOffToCircle}
+                onExternalChallengeComplete={() => setOpen(true)}
                 onFlowError={() => setOpen(true)}
               />
             </div>

@@ -135,6 +135,7 @@ Ordiva wraps conventional APIs in a consistent, discoverable payment interface.
 | `GET /v1/auth/config` | Public Circle application and required wallet configuration |
 | `POST /v1/auth/email/start` | Start the Circle email-OTP flow |
 | `POST /v1/auth/session` | Validate the Circle user token and create an Ordiva session |
+| `POST /v1/auth/wallet/finalize` | Check and synchronize a newly provisioned Arc wallet without creating another challenge |
 | `GET /v1/auth/me` | Return the authenticated user and public Arc wallet |
 | `POST /v1/runs/plan` | Generate a plan, discover candidates, and persist the run |
 | `GET /v1/runs` | List the caller's runs |
@@ -375,7 +376,7 @@ The current repository passes:
 
 - TypeScript type-checking;
 - ESLint;
-- 87 API tests;
+- 89 API tests;
 - 8 Solidity tests;
 - the Foundry contract build;
 - the NestJS production build;
