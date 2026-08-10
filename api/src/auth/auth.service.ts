@@ -82,6 +82,25 @@ export class AuthService {
     return { user, wallet };
   }
 
+  async finalizeWallet(session: SessionClaims, circleUserToken: string) {
+    const circleUser = await this.circle.getUser(circleUserToken);
+    if (circleUser.status !== "ENABLED") throw new UnauthorizedException("Circle user is not enabled");
+    if (circleUser.id !== session.circleUserId) throw new UnauthorizedException("Circle user does not match session");
+
+    const circleWallets = await this.circle.listWallets(circleUserToken);
+    const arcWallets = circleWallets.filter((wallet) => wallet.blockchain === "ARC-TESTNET");
+    if (arcWallets.length > 1) {
+      throw new ConflictException("Circle returned more than one Arc wallet for this user");
+    }
+
+    const existing = arcWallets[0];
+    if (!existing) return { wallet: null };
+
+    return {
+      wallet: await this.wallets.syncOneForUser(session.sub, this.normalizeArcEoa(existing))
+    };
+  }
+
   private normalizeArcEoa(wallet: CircleWallet): CircleArcWallet {
     if (wallet.accountType !== "EOA") {
       throw new ConflictException(

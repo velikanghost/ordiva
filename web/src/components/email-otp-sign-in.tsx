@@ -3,10 +3,10 @@
 import { CircleAlert, LoaderCircle, LockKeyhole, WalletCards } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { apiJson } from "@/lib/api";
+import { ApiError, apiAuthJson, apiJson } from "@/lib/api";
 import { useSessionStore } from "@/lib/session-store";
 
-type Phase = "idle" | "starting" | "verifying" | "creating-wallet" | "complete" | "error";
+type Phase = "idle" | "starting" | "verifying" | "creating-wallet" | "provisioning-wallet" | "complete" | "error";
 
 interface PublicAuthConfig {
   appId: string;
@@ -41,6 +41,12 @@ interface SessionResponse {
       };
 }
 
+type ArcWallet = NonNullable<SessionResponse["wallet"]>;
+
+interface WalletFinalizeResponse {
+  wallet: ArcWallet | null;
+}
+
 function messageForPhase(phase: Phase): string {
   switch (phase) {
     case "starting":
@@ -49,6 +55,8 @@ function messageForPhase(phase: Phase): string {
       return "Complete the one-time code in Circle's secure window.";
     case "creating-wallet":
       return "Finish the wallet challenge in Circle's secure window.";
+    case "provisioning-wallet":
+      return "Circle accepted wallet setup. Creating your Arc wallet…";
     case "complete":
       return "Your Arc wallet is ready.";
     case "error":
@@ -61,10 +69,12 @@ function messageForPhase(phase: Phase): string {
 export function EmailOtpSignIn({
   returnTo = "/app",
   onExternalChallenge,
+  onExternalChallengeComplete,
   onFlowError,
 }: {
   returnTo?: string;
   onExternalChallenge?: () => void;
+  onExternalChallengeComplete?: () => void;
   onFlowError?: () => void;
 }) {
   const router = useRouter();
@@ -73,7 +83,7 @@ export function EmailOtpSignIn({
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  const busy = ["starting", "verifying", "creating-wallet"].includes(phase);
+  const busy = ["starting", "verifying", "creating-wallet", "provisioning-wallet"].includes(phase);
 
   useEffect(() => {
     if (!hydrated) hydrate();
@@ -133,23 +143,12 @@ export function EmailOtpSignIn({
         const { challengeId } = session.walletAction;
         setPhase("creating-wallet");
         sdk.setAuthentication(circleAuth);
-        await new Promise<void>((resolve, reject) => {
-          sdk.execute(challengeId, (sdkError, result) => {
-            if (sdkError) reject(new Error(sdkError.message));
-            else if (!result || result.status !== "COMPLETE") {
-              reject(new Error("The wallet challenge did not complete."));
-            } else resolve();
-          });
-        });
+        await runWalletChallenge(sdk, challengeId);
 
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          session = await apiJson<SessionResponse>("/v1/auth/session", {
-            method: "POST",
-            body: JSON.stringify({ state: start.state, circleUserToken: circleAuth.userToken }),
-          });
-          if (session.wallet) break;
-          await new Promise((resolve) => window.setTimeout(resolve, 700));
-        }
+        setPhase("provisioning-wallet");
+        onExternalChallengeComplete?.();
+        const wallet = await waitForArcWallet(session.sessionToken, circleAuth.userToken);
+        session = { ...session, wallet, walletAction: { required: false } };
       }
 
       if (!session.wallet) throw new Error("Circle completed the challenge, but the Arc wallet is not ready yet. Try again in a moment.");
@@ -162,7 +161,7 @@ export function EmailOtpSignIn({
       setPhase("complete");
       router.replace(returnTo);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "An unexpected sign-in error occurred.");
+      setError(signInErrorMessage(caught));
       setPhase("error");
       if (handedOff) onFlowError?.();
     }
@@ -207,7 +206,7 @@ export function EmailOtpSignIn({
       {error ? (
         <div className="mt-4 flex items-start gap-3 rounded-[12px] bg-danger-wash px-4 py-3 text-sm leading-6 text-danger" role="alert">
           <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          <span>{error} Check the API connection and try again.</span>
+          <span>{error}</span>
         </div>
       ) : null}
 
@@ -224,4 +223,70 @@ export function EmailOtpSignIn({
       </p>
     </form>
   );
+}
+
+type WalletChallengeSdk = {
+  execute: (
+    id: string,
+    callback: (
+      error: { message?: string } | undefined,
+      result: { status?: string } | undefined,
+    ) => void,
+  ) => void;
+};
+
+function runWalletChallenge(sdk: WalletChallengeSdk, challengeId: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    sdk.execute(challengeId, (sdkError, result) => {
+      if (sdkError) {
+        reject(new Error(sdkError.message ?? "Circle could not complete wallet setup."));
+        return;
+      }
+
+      switch (result?.status) {
+        case "COMPLETE":
+        case "PENDING":
+        case "IN_PROGRESS":
+          resolve();
+          return;
+        case "EXPIRED":
+          reject(new Error("The Circle wallet challenge expired. Start the sign-in flow again."));
+          return;
+        case "FAILED":
+          reject(new Error("Circle could not create the Arc wallet. Try the wallet challenge again."));
+          return;
+        default:
+          reject(new Error("Circle returned no usable result for the wallet challenge. Try again."));
+      }
+    });
+  });
+}
+
+async function waitForArcWallet(sessionToken: string, circleUserToken: string): Promise<ArcWallet> {
+  for (let attempt = 0; attempt < 15; attempt += 1) {
+    if (attempt > 0) {
+      const delayMs = Math.min(600 + attempt * 150, 1_800);
+      await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+    }
+
+    const result = await apiAuthJson<WalletFinalizeResponse>(
+      "/v1/auth/wallet/finalize",
+      sessionToken,
+      {
+        method: "POST",
+        body: JSON.stringify({ circleUserToken }),
+      },
+    );
+    if (result.wallet) return result.wallet;
+  }
+
+  throw new Error("Circle accepted wallet setup, but the Arc wallet is still provisioning. Wait a moment and try again.");
+}
+
+function signInErrorMessage(caught: unknown): string {
+  if (caught instanceof ApiError) return caught.message;
+  if (caught instanceof TypeError) {
+    return "Ordiva could not reach the API. Check your connection and try again.";
+  }
+  return caught instanceof Error ? caught.message : "An unexpected sign-in error occurred.";
 }

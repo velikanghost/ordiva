@@ -28,6 +28,10 @@ const sessionSchema = z.object({
   circleUserToken: z.string().min(1)
 });
 
+const finalizeWalletSchema = z.object({
+  circleUserToken: z.string().min(1)
+});
+
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -58,6 +62,15 @@ export class AuthController {
   session(@Body() body: unknown) {
     const input = parseBody(sessionSchema, body);
     return this.auth.completeSession(input.state, input.circleUserToken);
+  }
+
+  @Post("wallet/finalize")
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(SessionGuard)
+  finalizeWallet(@Req() request: Request, @Body() body: unknown) {
+    if (!request.auth) throw new UnauthorizedException("Missing authenticated session");
+    const input = parseBody(finalizeWalletSchema, body);
+    return this.auth.finalizeWallet(request.auth, input.circleUserToken);
   }
 
   @Get("me")
