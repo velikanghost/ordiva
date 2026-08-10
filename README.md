@@ -2,7 +2,7 @@
 
 > Your agent spends well, and you can see why.
 
-Ordiva is an agentic supplier-sourcing platform built for the **Agentic Economy** track of the Arc Hackathon. A user gives the agent a real-world procurement goal and a USDC budget, and grants that budget once. The agent then plans the work, discovers supplier candidates, and **buys evidence about each one with real USDC nanopayments on Arc — signed by its own wallet, with no human present.** Every purchase exposes its reason, policy result, price, and settlement receipt.
+Ordiva is an agentic procurement platform built for the **Agentic Economy** track of the Arc Hackathon. Its current MVP focuses on supplier sourcing and outreach. A user funds a dedicated USDC budget, then the agent plans the work, discovers candidates, and autonomously purchases verification data using Circle Gateway nanopayments settled on Arc. Each payment is authorized by Ordiva's dedicated agent wallet and recorded with its reason, policy decision, price, and settlement receipt. Human approval remains required before sending supplier outreach.
 
 The central idea is simple: **the model provides judgment; deterministic code controls authority**.
 
@@ -19,29 +19,6 @@ Circle already provides the user-controlled wallet infrastructure. Ordiva adds t
 - when to retry, switch providers, or stop;
 - whether the remaining budget is worth spending;
 - and a human-readable record of every economic decision.
-
-## The demo
-
-The primary demonstration goal is:
-
-> Find at least three industrial-pump suppliers in Rotterdam, verify that they are real companies, and prepare a request for quotation for each. Budget: 2 USDC.
-
-The current run flow:
-
-1. The user signs in with an email OTP through Circle and receives one user-controlled EOA on Arc Testnet.
-2. Ordiva provisions the user's **agent wallet** — an Arc EOA it operates on their behalf.
-3. The user grants a budget **once**, moving USDC from their own wallet into the agent's Circle Gateway balance. This is the only human act in the money path.
-4. The user enters a sourcing outcome and service budget.
-5. OpenAI generates a constrained, schema-validated research plan.
-6. Ordiva executes multiple Firecrawl discovery queries at zero wallet charge.
-7. Results are normalized and deduplicated by supplier domain, capped at the requested candidate count.
-8. **The agent buys evidence for each candidate** — scrape, company enrichment, contact discovery — paying per call from its own escrowed balance, unattended.
-9. The workbench shows the live spend meter and a decision ledger: every purchase, its reason, price, outcome, and settlement reference.
-10. Verified suppliers with public contacts receive persisted RFQ drafts.
-11. The operator reviews the exact recipient, subject, and body; approval is bound to that draft's SHA-256 hash and invalidated by any edit.
-12. The agent buys the Resend delivery through the same budget-gated x402 rail and records both the email receipt and Arc settlement.
-
-Public-web discovery is explicitly reported as a **zero-wallet-charge step**. Email delivery is not claimed until the corresponding authorization and receipt exist.
 
 ## Why this belongs in the Agentic Economy
 
@@ -133,35 +110,18 @@ flowchart LR
     X --> P[Apollo]
     X --> E[Resend]
 
-    A --> M[(MongoDB users and wallets)]
+    A --> M[(MongoDB users, runs, wallets and ledgers)]
+    A --> Q[OrdivaRegistry commitments]
+    Q --> S[Arcscan transaction proofs]
 ```
 
-Two paths, now connected:
+Three layers are connected:
 
 1. **The run path** plans, performs zero-wallet-charge discovery, then buys evidence for each candidate through the paid rail.
 2. **The paid service rail** exposes conventional APIs behind Arc-only x402 endpoints with pre-payment validation and normalized receipts.
+3. **The audit layer** anchors run policy, outreach approvals, purchase-ledger roots, and final results through `OrdivaRegistry` without publishing commercial content.
 
 The bridge between them is the agent wallet: an Ordiva-operated Arc EOA, funded by its own user, that signs each payment. Ordiva does not use a shared platform buyer wallet and does not fund anyone's agent.
-
-## Judgment and authority
-
-| Decision | Owner | Current state |
-|---|---|---|
-| Decompose the sourcing goal | LLM | Implemented |
-| Generate discovery and evidence requirements | LLM | Implemented |
-| Choose which evidence to buy per candidate | Deterministic code | Implemented |
-| Enforce the Arc network | Deterministic code | Implemented, before signing |
-| Enforce allowed services and sellers | Deterministic code | Implemented, before signing |
-| Enforce the budget and exact price | Deterministic code | Implemented, before signing |
-| Stop when the budget is exhausted | Deterministic code | Implemented |
-| Validate request and response schemas | Deterministic code | Implemented |
-| Authorize email recipients and content | Deterministic code plus explicit user approval | Implemented with versioned content hashes |
-
-The budget gate runs **before any signature exists**, so a refused purchase leaves no
-authorisation behind. Every refusal is recorded on the run with its reason — what the agent
-declined to buy is part of the record, not an omission from it.
-
-Fetched pages are treated as evidence, never instructions. The model receives bounded content and returns constrained structured output.
 
 ## Arc x402 adapter catalog
 
@@ -179,7 +139,12 @@ Ordiva wraps conventional APIs in a consistent, discoverable payment interface.
 | `POST /v1/runs/plan` | Generate a plan, discover candidates, and persist the run |
 | `GET /v1/runs` | List the caller's runs |
 | `GET /v1/runs/:runId` | Return one run with its full purchase ledger |
-| `POST /v1/runs/:runId/verify` | Buy evidence for every candidate, unattended |
+| `POST /v1/runs/:runId/verify` | Recover or explicitly restart automatic candidate verification |
+| `POST /v1/runs/:runId/outreach/drafts` | Create persisted RFQ drafts for verified suppliers |
+| `POST /v1/runs/:runId/outreach/:outreachId` | Save a new version of an RFQ draft |
+| `POST /v1/runs/:runId/outreach/:outreachId/approve` | Approve the exact current RFQ content hash |
+| `POST /v1/runs/:runId/outreach/:outreachId/send-test` | Send a labeled test copy to the signed-in user |
+| `POST /v1/runs/:runId/outreach/:outreachId/send` | Queue an approved RFQ for paid delivery |
 | `GET /v1/agent-wallet` | Agent address and live Gateway spending balance |
 | `POST /v1/agent-wallet/fund/approve` | Challenge permitting the Gateway to move USDC |
 | `POST /v1/agent-wallet/fund/deposit` | Challenge crediting the agent's Gateway balance |
@@ -196,7 +161,7 @@ Account and sourcing routes are enabled only when their required environment var
 | `POST /v1/evidence/firecrawl-scrape` | Company evidence | Firecrawl | `$0.005` |
 | `POST /v1/company/apollo-enrich` | Company enrichment | Apollo | `$0.0075` |
 | `POST /v1/contacts/firecrawl-extract` | Public contact discovery | Firecrawl | `$0.01` |
-| `POST /v1/email/resend-send` | Allowlisted email delivery | Resend | `$0.01` |
+| `POST /v1/email/resend-send` | Valid-recipient email delivery | Resend | `$0.01` |
 
 `GET /v1/catalog` is free. It returns the network, seller address, configured availability, prices, and JSON Schemas for every adapter.
 
@@ -208,7 +173,7 @@ Paid adapter responses include:
 - request latency;
 - and a SHA-256 hash of the response.
 
-Unavailable services, malformed inputs, unsafe scrape targets, and disallowed email recipients fail before the x402 payment middleware.
+Unavailable services, malformed inputs, invalid email addresses, and unsafe scrape targets fail before the x402 payment middleware.
 
 ## Authentication and wallet model
 
@@ -275,9 +240,10 @@ the budget, not the keys.
 | Agent planning | OpenAI Responses API through the Vercel AI SDK |
 | Authentication | Circle User-Controlled Wallets and email OTP |
 | Payments | Arc Testnet, USDC, x402, Circle Gateway nanopayments |
+| Audit contract | Solidity, Foundry, `OrdivaRegistry` |
 | Persistence | MongoDB with Mongoose |
 | Upstreams | Tavily, Firecrawl, Apollo, Resend |
-| Tooling | pnpm workspaces, Vitest, ESLint |
+| Tooling | pnpm workspaces, Foundry, Vitest, ESLint |
 
 ## Repository
 
@@ -291,11 +257,16 @@ ordiva/
 │   │   ├── users/          User persistence
 │   │   └── wallets/        One-wallet-per-user records
 │   └── test/               API integration tests
+├── contracts/              Foundry project for OrdivaRegistry
+│   ├── script/             Arc Testnet deployment scripts
+│   ├── src/                Solidity contracts
+│   └── test/               Solidity tests
 ├── web/                    Next.js operator interface
 │   └── src/
 │       ├── app/            App Router pages
 │       ├── components/     Authentication, goal and run interfaces
 │       └── lib/            API, session and run state
+├── docs/                   Pitch and supporting project artifacts
 ├── package.json            Workspace scripts
 └── pnpm-workspace.yaml
 ```
@@ -311,6 +282,7 @@ Package-specific navigation:
 
 - Node.js 22
 - pnpm 10
+- Foundry (`forge`)
 - a MongoDB database
 - Circle Developer credentials configured for User-Controlled Wallets
 - an OpenAI API key
@@ -321,6 +293,7 @@ Tavily, Apollo, and Resend are optional for running the initial discovery flow. 
 ### Install
 
 ```bash
+git submodule update --init --recursive
 pnpm install
 cp api/.env.example api/.env
 ```
@@ -349,7 +322,7 @@ In another terminal, start the web app:
 pnpm dev:web
 ```
 
-Open `http://localhost:3000`. The web app proxies `/api/backend/*` to the API at `http://localhost:4100` by default.
+Open `http://localhost:3001`. The web app proxies `/api/backend/*` to the API at `http://localhost:4100` by default.
 
 To use a different API origin, set `ORDIVA_API_URL` for the web process.
 
@@ -372,14 +345,16 @@ To use a different API origin, set `ORDIVA_API_URL` for the web process.
 | `OPENAI_MODEL` | Optional | Overrides the configured OpenAI model |
 | `FIRECRAWL_API_KEY` | Sourcing | Autonomous supplier discovery and evidence |
 | `ARC_ADAPTER_SELLER_ADDRESS` | Adapters | Receives Arc Gateway nanopayments |
+| `ARC_REGISTRY_ADDRESS` | Audit layer | Optional deployed `OrdivaRegistry` address for run and ledger commitments |
 | `CIRCLE_GATEWAY_FACILITATOR_URL` | Adapters | Verifies Gateway payment authorizations |
 | `TAVILY_API_KEY` | Optional adapter | Alternate supplier search |
 | `APOLLO_API_KEY` | Optional adapter | Company enrichment |
 | `RESEND_API_KEY` | Optional adapter | Email delivery |
 | `RESEND_FROM_EMAIL` | Email | Verified sender identity |
 | `PRICE_*` | Adapter pricing | Per-route USDC prices such as `$0.02` |
+| `ORDIVA_API_URL` | Web proxy | API origin used by the Next.js server; defaults to `http://localhost:4100` |
 
-See [`api/.env.example`](./api/.env.example) for the complete configuration contract.
+See [`api/.env.example`](./api/.env.example) for the complete API configuration contract. `ORDIVA_API_URL` belongs to the web process and can be set in its deployment environment.
 
 ## Commands
 
@@ -391,8 +366,8 @@ All JavaScript workspace operations use pnpm.
 | `pnpm dev:web` | Start the Next.js development server |
 | `pnpm typecheck` | Type-check the API, tests, and web app |
 | `pnpm lint` | Run API and web linting |
-| `pnpm test` | Run the API test suite |
-| `pnpm build` | Create production API and web builds |
+| `pnpm test` | Build and test the Foundry contracts, then run the API test suite |
+| `pnpm build` | Build the Foundry contracts, API, and web app |
 
 ## Verification status
 
@@ -400,7 +375,9 @@ The current repository passes:
 
 - TypeScript type-checking;
 - ESLint;
-- 78 API tests;
+- 87 API tests;
+- 8 Solidity tests;
+- the Foundry contract build;
 - the NestJS production build;
 - and the Next.js production build on Node.js 22.
 
@@ -423,15 +400,16 @@ Alongside the original coverage — Circle authentication boundaries, one-wallet
 - MongoDB sourcing runs with a complete purchase ledger, ownership enforced
 - OpenAI structured sourcing plans and autonomous Firecrawl discovery
 - paid evidence verification per candidate: scrape, enrichment, contact discovery
+- automatic candidate verification and automatic RFQ draft preparation
 - six Arc-only x402 seller routes, all priced at or below `$0.01`
 - operator workbench with a live spend meter and decision ledger
-- valid-recipient, idempotent Resend adapter
+- paginated, versioned RFQ drafts with exact-content approval and self-test delivery
+- valid-recipient, idempotent Resend delivery through the paid adapter rail
+- Foundry-based `OrdivaRegistry` commitments with Arcscan transaction links
 
 ### Next
 
 - return unspent budget from the agent's Gateway balance to the user's wallet
-- create run-connected email drafts and approval records
-- send only after recipient-level approval
 
 This boundary is intentional and visible in the product. Ordiva does not present zero-charge discovery as an onchain purchase, and it names its custody tradeoff rather than implying the agent wallet is self-custodied.
 
