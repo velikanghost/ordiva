@@ -1,6 +1,12 @@
 import { apiAuthJson } from "@/lib/api";
 
-export type RunStatus = "research_ready" | "verifying" | "verified" | "budget_exhausted";
+export type RunStatus =
+  | "research_ready"
+  | "verifying"
+  | "verified"
+  | "partially_verified"
+  | "verification_failed"
+  | "budget_exhausted";
 export type PurchaseOutcome = "settled" | "declined" | "failed";
 
 /** One economic decision, recorded whether or not money moved. */
@@ -10,7 +16,10 @@ export interface RunPurchase {
   price: string;
   outcome: PurchaseOutcome;
   supplierId?: string;
+  /** Circle Gateway transfer UUID for batched nanopayments. */
   settlement?: string;
+  /** Genuine EVM transaction hash for an onchain Arc transaction. */
+  transactionHash?: string;
   payer?: string;
   network?: string;
   responseHash?: string;
@@ -27,7 +36,42 @@ export interface RunSupplier {
   description: string;
   sourceQuery: string;
   verified: boolean;
+  verificationStatus: "unverified" | "verifying" | "verified" | "insufficient_evidence" | "failed";
   evidence: string[];
+  contacts: string[];
+}
+
+export interface RunOutreach {
+  id: string;
+  supplierId: string;
+  recipient: string;
+  subject: string;
+  text: string;
+  version: number;
+  contentHash: string;
+  status: "draft" | "approved" | "queued" | "sending" | "sent" | "failed";
+  approvedAt?: string;
+  messageId?: string;
+  failureReason?: string;
+  testStatus?: "sending" | "sent" | "failed";
+  testVersion?: number;
+  testRecipient?: string;
+  testMessageId?: string;
+  testFailureReason?: string;
+  testSentAt?: string;
+}
+
+export interface RunContractActivity {
+  id: string;
+  type: "run_registered" | "ledger_anchored" | "run_closed";
+  state: "pending" | "submitted" | "confirmed" | "failed";
+  network: string;
+  contractAddress: string;
+  circleTransactionId?: string;
+  transactionHash?: string;
+  failureReason?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -52,6 +96,8 @@ export interface SourcingRun {
   };
   suppliers: RunSupplier[];
   purchases: RunPurchase[];
+  outreach: RunOutreach[];
+  contractActivities: RunContractActivity[];
   research: { provider: string; queriesExecuted: number; creditsUsed: number | null };
   createdAt: string;
 }
@@ -60,14 +106,39 @@ export function fetchRun(runId: string, token: string): Promise<SourcingRun> {
   return apiAuthJson<SourcingRun>(`/v1/runs/${runId}`, token);
 }
 
-/**
- * Buy evidence for every candidate in the run.
- *
- * Long-running: each candidate costs several paid Arc calls, and the promise
- * resolves only once the agent has finished spending.
- */
-export function verifyRun(runId: string, token: string): Promise<SourcingRun> {
-  return apiAuthJson<SourcingRun>(`/v1/runs/${runId}/verify`, token, { method: "POST" });
+export function fetchRuns(token: string): Promise<SourcingRun[]> {
+  return apiAuthJson<SourcingRun[]>("/v1/runs", token);
+}
+
+export function createOutreachDrafts(runId: string, token: string): Promise<SourcingRun> {
+  return apiAuthJson<SourcingRun>(`/v1/runs/${runId}/outreach/drafts`, token, { method: "POST" });
+}
+
+export function updateOutreachDraft(
+  runId: string,
+  outreachId: string,
+  token: string,
+  input: { recipient: string; subject: string; text: string },
+): Promise<SourcingRun> {
+  return apiAuthJson<SourcingRun>(`/v1/runs/${runId}/outreach/${outreachId}`, token, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function approveOutreach(runId: string, outreachId: string, token: string, contentHash: string): Promise<SourcingRun> {
+  return apiAuthJson<SourcingRun>(`/v1/runs/${runId}/outreach/${outreachId}/approve`, token, {
+    method: "POST",
+    body: JSON.stringify({ contentHash }),
+  });
+}
+
+export function sendOutreach(runId: string, outreachId: string, token: string): Promise<SourcingRun> {
+  return apiAuthJson<SourcingRun>(`/v1/runs/${runId}/outreach/${outreachId}/send`, token, { method: "POST" });
+}
+
+export function sendTestOutreach(runId: string, outreachId: string, token: string): Promise<SourcingRun> {
+  return apiAuthJson<SourcingRun>(`/v1/runs/${runId}/outreach/${outreachId}/send-test`, token, { method: "POST" });
 }
 
 /**

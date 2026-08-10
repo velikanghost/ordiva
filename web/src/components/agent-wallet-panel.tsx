@@ -66,6 +66,8 @@ export function AgentWalletPanel() {
 
   useEffect(() => {
     if (!token) return;
+    // Wallet state is external Arc/Circle state and must be synchronized on mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh()
       .then(() => setPhase("ready"))
       .catch((caught: unknown) => {

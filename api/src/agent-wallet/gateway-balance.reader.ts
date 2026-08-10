@@ -23,10 +23,6 @@ const gatewayBalancesSchema = z.object({
     .default([])
 });
 
-const GATEWAY_ABI = parseAbi([
-  "function availableBalance(address token, address depositor) view returns (uint256)"
-]);
-
 const ERC20_ABI = parseAbi([
   "function balanceOf(address) view returns (uint256)",
   "function allowance(address owner, address spender) view returns (uint256)"

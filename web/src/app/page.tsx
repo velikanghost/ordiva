@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, Check, CircleDot, Lock, ShieldCheck, Search, ShieldAlert, MailCheck, Zap } from "lucide-react";
-import { SessionControls } from "@/components/session-controls";
+import { Check, CircleDot, Lock, Search, ShieldAlert, MailCheck } from "lucide-react";
+import { LandingAuthCta } from "@/components/landing-auth-cta";
 import { PolicyInspector } from "@/components/policy-inspector";
 import { SourcingBlueprint } from "@/components/sourcing-blueprint";
 
@@ -19,13 +19,11 @@ export default function Home() {
             <span className="hidden items-center gap-2 text-sm text-muted sm:flex">
               <CircleDot aria-hidden="true" className="size-4 text-success" /> Arc Testnet
             </span>
-            <Link
-              href="/app"
+            <LandingAuthCta
+              label="Connect wallet"
+              icon="wallet"
               className="inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-violet px-4 text-sm font-semibold text-white transition-colors hover:bg-violet-dark shadow-ledger-sm"
-            >
-              Start sourcing run <ArrowRight aria-hidden="true" className="size-4" />
-            </Link>
-            <SessionControls compact />
+            />
           </div>
         </header>
 
@@ -41,12 +39,10 @@ export default function Home() {
               </p>
 
               <div className="mt-10 flex flex-wrap items-center gap-4">
-                <Link
-                  href="/app"
+                <LandingAuthCta
+                  label="Start a sourcing run"
                   className="inline-flex min-h-13 items-center justify-center gap-2 rounded-[12px] bg-violet px-6 text-base font-semibold text-white transition-all hover:bg-violet-dark shadow-violet-glow"
-                >
-                  Start a sourcing run <ArrowRight aria-hidden="true" className="size-4" />
-                </Link>
+                />
                 <a
                   href="#how-it-works"
                   className="inline-flex min-h-13 items-center justify-center rounded-[12px] border border-line-strong bg-paper px-6 text-base font-semibold text-ink transition-colors hover:bg-ink hover:text-paper shadow-ledger-sm"
@@ -238,7 +234,7 @@ export default function Home() {
                 </div>
                 <div className="flex items-start gap-3 p-6 bg-canvas/40">
                   <Lock aria-hidden="true" className="mt-1 size-4 shrink-0 text-success" />
-                  <span>Checks recipient against tested email allowlists and blocks unauthorized sends.</span>
+                  <span>Validates recipient syntax and requires approval of the exact draft before sending.</span>
                 </div>
               </div>
             </div>
@@ -296,7 +292,7 @@ export default function Home() {
               </div>
               <h3 className="mt-3 font-semibold text-base">Email Dispatch</h3>
               <p className="mt-2 text-xs leading-5 text-muted">
-                Idempotent email outreach to tested allowlisted recipients.
+                Idempotent email outreach to any valid recipient entered in an approved draft.
               </p>
             </div>
           </div>
@@ -312,12 +308,10 @@ export default function Home() {
               Start with free planning and public supplier discovery. Connect your Circle wallet when ready.
             </p>
           </div>
-          <Link
-            href="/app"
-            className="inline-flex min-h-13 items-center justify-center gap-2 rounded-[12px] bg-violet px-6 text-base font-semibold text-white transition-colors hover:bg-violet-dark shrink-0"
-          >
-            Open Sourcing Workbench <ArrowRight aria-hidden="true" className="size-4" />
-          </Link>
+          <LandingAuthCta
+            label="Open sourcing workspace"
+            className="inline-flex min-h-13 shrink-0 items-center justify-center gap-2 rounded-[12px] bg-violet px-6 text-base font-semibold text-white transition-colors hover:bg-violet-dark"
+          />
         </section>
       </div>
     </main>

@@ -62,10 +62,12 @@ function build({
     _id: "run-1",
     userId: "user-1",
     status,
+    supplierMinimum: supplierCount,
     budgetMicros: "2000000",
     spentMicros: "0",
     updatedAt,
-    suppliers
+    suppliers,
+    purchases: []
   };
 
   const recorded: Array<Record<string, unknown>> = [];
@@ -74,14 +76,21 @@ function build({
 
   const runs = {
     getOwned: vi.fn(async () => run),
+    claimVerification: vi.fn(async () => {
+      if (run.status === "verifying" && Date.now() - updatedAt.getTime() <= 10 * 60 * 1000) return false;
+      statuses.push("verifying");
+      return true;
+    }),
+    resumeableVerifications: vi.fn(async () => []),
+    renewVerificationLease: vi.fn(async () => undefined),
     setStatus: vi.fn(async (_id: string, next: string) => {
       statuses.push(next);
     }),
     recordPurchase: vi.fn(async (_id: string, purchase: Record<string, unknown>) => {
       recorded.push(purchase);
     }),
-    markSupplierVerified: vi.fn(async (_id: string, supplierId: string, evidence: string[]) => {
-      verified.push({ supplierId, evidence });
+    setSupplierVerification: vi.fn(async (_id: string, supplierId: string, result: { status: string; evidence: string[] }) => {
+      if (result.status === "verified") verified.push({ supplierId, evidence: result.evidence });
     }),
     view: vi.fn(async () => ({ id: "run-1" }))
   };
@@ -190,7 +199,7 @@ describe("VerificationService", () => {
 
     expect(recorded).toHaveLength(3);
     expect(recorded.every((entry) => entry.outcome === "failed")).toBe(true);
-    expect(statuses).toEqual(["verifying", "verified"]);
+    expect(statuses).toEqual(["verifying", "verification_failed"]);
   });
 
   it("marks a candidate verified with evidence drawn from the paid responses", async () => {

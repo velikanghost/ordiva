@@ -7,13 +7,15 @@ import { AUTH_CONFIG } from "./auth.constants.js";
 
 const loginStateSchema = z.object({
   kind: z.literal("login_state"),
-  deviceId: z.string().min(1)
+  deviceId: z.string().min(1),
+  email: z.string().email()
 });
 
 const sessionSchema = z.object({
   kind: z.literal("session"),
   sub: z.string().min(1),
-  circleUserId: z.string().min(1)
+  circleUserId: z.string().min(1),
+  email: z.string().email()
 });
 
 if (!globalThis.crypto) {
@@ -30,8 +32,8 @@ export class SessionTokenService {
     this.secret = new TextEncoder().encode(config.AUTH_JWT_SECRET);
   }
 
-  issueLoginState(deviceId: string): Promise<string> {
-    return new SignJWT({ kind: "login_state", deviceId })
+  issueLoginState(deviceId: string, email: string): Promise<string> {
+    return new SignJWT({ kind: "login_state", deviceId, email })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuer("ordiva-api")
       .setAudience("ordiva-web")
@@ -40,8 +42,8 @@ export class SessionTokenService {
       .sign(this.secret);
   }
 
-  issueSession(userId: string, circleUserId: string): Promise<string> {
-    return new SignJWT({ kind: "session", circleUserId })
+  issueSession(userId: string, circleUserId: string, email: string): Promise<string> {
+    return new SignJWT({ kind: "session", circleUserId, email })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuer("ordiva-api")
       .setAudience("ordiva-web")

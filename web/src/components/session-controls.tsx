@@ -7,7 +7,13 @@ import { useSessionStore } from "@/lib/session-store";
 import { CopyableAddress } from "@/components/copyable-address";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-export function SessionControls({ compact = false }: { compact?: boolean }) {
+export function SessionControls({
+  compact = false,
+  showWorkspace = true,
+}: {
+  compact?: boolean;
+  showWorkspace?: boolean;
+}) {
   const { hydrated, session, hydrate, signOut } = useSessionStore();
 
   useEffect(() => {
@@ -40,12 +46,14 @@ export function SessionControls({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <ThemeToggle />
-      <Link
-        href="/app"
-        className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-line-strong px-4 text-sm font-semibold transition-colors hover:border-ink hover:bg-ink hover:text-paper"
-      >
-        <LayoutDashboard aria-hidden="true" className="size-4" /> Workspace
-      </Link>
+      {showWorkspace ? (
+        <Link
+          href="/app"
+          className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-line-strong px-4 text-sm font-semibold transition-colors hover:border-ink hover:bg-ink hover:text-paper"
+        >
+          <LayoutDashboard aria-hidden="true" className="size-4" /> Workspace
+        </Link>
+      ) : null}
       <span className="hidden text-right sm:block">
         <span className="block text-xs font-semibold">{session.email}</span>
         <CopyableAddress

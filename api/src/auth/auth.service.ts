@@ -29,7 +29,7 @@ export class AuthService {
     const normalizedEmail = email.trim().toLowerCase();
     const [circleTokens, state] = await Promise.all([
       this.circle.startEmailOtp(normalizedEmail, deviceId),
-      this.tokens.issueLoginState(deviceId)
+      this.tokens.issueLoginState(deviceId, normalizedEmail)
     ]);
 
     return {
@@ -39,11 +39,11 @@ export class AuthService {
   }
 
   async completeSession(state: string, circleUserToken: string) {
-    await this.tokens.verifyLoginState(state);
+    const login = await this.tokens.verifyLoginState(state);
     const circleUser = await this.circle.getUser(circleUserToken);
     if (circleUser.status !== "ENABLED") throw new UnauthorizedException("Circle user is not enabled");
 
-    const user = await this.users.upsertVerifiedIdentity(circleUser.id);
+    const user = await this.users.upsertVerifiedIdentity(circleUser.id, login.email);
     const circleWallets = await this.circle.listWallets(circleUserToken);
     const arcWallets = circleWallets.filter((wallet) => wallet.blockchain === "ARC-TESTNET");
 
@@ -63,7 +63,7 @@ export class AuthService {
     }
 
     return {
-      sessionToken: await this.tokens.issueSession(user.id, user.circleUserId),
+      sessionToken: await this.tokens.issueSession(user.id, user.circleUserId, user.email),
       user,
       wallet,
       walletAction: challengeId
@@ -78,6 +78,7 @@ export class AuthService {
       this.wallets.findByUserId(session.sub)
     ]);
     if (user.circleUserId !== session.circleUserId) throw new UnauthorizedException("Session user mismatch");
+    if (user.email !== session.email) throw new UnauthorizedException("Session email mismatch");
     return { user, wallet };
   }
 

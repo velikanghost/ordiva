@@ -12,6 +12,15 @@ export interface ProvisionedAgentWallet {
   readonly state: string;
 }
 
+export interface ContractExecutionInput {
+  readonly walletId: string;
+  readonly contractAddress: string;
+  readonly abiFunctionSignature: string;
+  readonly abiParameters: ReadonlyArray<string | number | boolean>;
+  readonly idempotencyKey: string;
+  readonly refId: string;
+}
+
 export class CircleDcwApiError extends Error {
   constructor(
     message: string,
@@ -86,5 +95,43 @@ export class CircleDcwClient implements CircleTypedDataSigner {
    */
   async signTypedData(params: { walletId: string; data: string }) {
     return this.client.signTypedData(params);
+  }
+
+  /** Submit an Arc smart-contract write from an agent wallet. */
+  async createContractExecution(input: ContractExecutionInput): Promise<{ id: string; state: string }> {
+    try {
+      const response = await this.client.createContractExecutionTransaction({
+        walletId: input.walletId,
+        contractAddress: input.contractAddress,
+        abiFunctionSignature: input.abiFunctionSignature,
+        abiParameters: [...input.abiParameters],
+        idempotencyKey: input.idempotencyKey,
+        refId: input.refId,
+        fee: { type: "level", config: { feeLevel: "MEDIUM" } }
+      });
+      const transaction = response.data;
+      if (!transaction?.id) throw new Error("Circle returned no contract transaction id.");
+      return { id: transaction.id, state: transaction.state };
+    } catch (error) {
+      throw new CircleDcwApiError("Circle could not submit the registry transaction.", error);
+    }
+  }
+
+  /** Wait until Circle exposes the genuine Arc transaction hash. */
+  async waitForTransactionHash(id: string): Promise<{ txHash: string; state: string }> {
+    try {
+      const response = await this.client.getTransaction({
+        id,
+        waitForTxHash: true,
+        pollingInterval: 1_500,
+        signal: AbortSignal.timeout(90_000)
+      });
+      return {
+        txHash: response.data.transaction.txHash,
+        state: response.data.transaction.state
+      };
+    } catch (error) {
+      throw new CircleDcwApiError("Circle did not confirm the registry transaction.", error);
+    }
   }
 }

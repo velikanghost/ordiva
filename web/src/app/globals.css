@@ -123,6 +123,21 @@ a {
   animation: proof-enter 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+.plan-drawer {
+  animation: plan-drawer-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes plan-drawer-in {
+  from {
+    clip-path: inset(0 0 0 7%);
+    transform: translateX(24px);
+  }
+  to {
+    clip-path: inset(0);
+    transform: translateX(0);
+  }
+}
+
 @keyframes proof-enter {
   from {
     clip-path: inset(0 0 11% 0);

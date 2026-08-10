@@ -1,10 +1,9 @@
 "use client";
 
-import { ArrowRight, Check, CircleAlert, LoaderCircle, LockKeyhole, WalletCards } from "lucide-react";
-import Link from "next/link";
-import { useState } from "react";
+import { CircleAlert, LoaderCircle, LockKeyhole, WalletCards } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { apiJson } from "@/lib/api";
-import { CopyableAddress } from "@/components/copyable-address";
 import { useSessionStore } from "@/lib/session-store";
 
 type Phase = "idle" | "starting" | "verifying" | "creating-wallet" | "complete" | "error";
@@ -59,17 +58,33 @@ function messageForPhase(phase: Phase): string {
   }
 }
 
-export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
-  const acceptSession = useSessionStore((state) => state.acceptSession);
+export function EmailOtpSignIn({
+  returnTo = "/app",
+  onExternalChallenge,
+  onFlowError,
+}: {
+  returnTo?: string;
+  onExternalChallenge?: () => void;
+  onFlowError?: () => void;
+}) {
+  const router = useRouter();
+  const { hydrated, session: existingSession, hydrate, acceptSession } = useSessionStore();
   const [email, setEmail] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [walletIsNew, setWalletIsNew] = useState(true);
 
   const busy = ["starting", "verifying", "creating-wallet"].includes(phase);
 
+  useEffect(() => {
+    if (!hydrated) hydrate();
+  }, [hydrate, hydrated]);
+
+  useEffect(() => {
+    if (hydrated && existingSession) router.replace(returnTo);
+  }, [existingSession, hydrated, returnTo, router]);
+
   async function completeCircleFlow() {
+    let handedOff = false;
     setError(null);
     setPhase("starting");
 
@@ -103,6 +118,8 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
               else resolve({ userToken: result.userToken, encryptionKey: result.encryptionKey });
             },
           );
+          handedOff = true;
+          onExternalChallenge?.();
           sdk.verifyOtp();
         },
       );
@@ -113,7 +130,6 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
       });
 
       if (session.walletAction.required) {
-        setWalletIsNew(true);
         const { challengeId } = session.walletAction;
         setPhase("creating-wallet");
         sdk.setAuthentication(circleAuth);
@@ -134,8 +150,6 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
           if (session.wallet) break;
           await new Promise((resolve) => window.setTimeout(resolve, 700));
         }
-      } else {
-        setWalletIsNew(false);
       }
 
       if (!session.wallet) throw new Error("Circle completed the challenge, but the Arc wallet is not ready yet. Try again in a moment.");
@@ -145,51 +159,20 @@ export function EmailOtpSignIn({ returnTo = "/" }: { returnTo?: string }) {
         wallet: session.wallet,
         circleAuth,
       });
-      setWalletAddress(session.wallet.address);
       setPhase("complete");
+      router.replace(returnTo);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "An unexpected sign-in error occurred.");
       setPhase("error");
+      if (handedOff) onFlowError?.();
     }
   }
 
-  if (phase === "complete" && walletAddress) {
-    if (!walletIsNew) {
-      return (
-        <div className="proof-enter" role="status">
-          <span className="grid size-12 place-items-center rounded-full bg-success-wash text-success">
-            <Check aria-hidden="true" className="size-5" />
-          </span>
-          <h2 className="mt-7 text-3xl font-semibold tracking-[-0.03em]">Signed in</h2>
-          <p className="mt-3 text-base leading-7 text-muted">{email}</p>
-          <div className="mt-6 flex items-center gap-3 rounded-[12px] border border-line px-4 py-4">
-            <WalletCards aria-hidden="true" className="size-4 shrink-0 text-muted" />
-            <CopyableAddress address={walletAddress} truncate className="text-sm text-muted" />
-            <span className="ml-auto rounded-full bg-success-wash px-2.5 py-1 text-[0.68rem] font-semibold text-success">
-              Connected
-            </span>
-          </div>
-          <Link href={returnTo} className="mt-8 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] bg-violet px-5 font-semibold text-white transition-colors hover:bg-violet-dark">
-            Continue <ArrowRight aria-hidden="true" className="size-4" />
-          </Link>
-        </div>
-      );
-    }
-
+  if (!hydrated || existingSession || phase === "complete") {
     return (
-      <div className="proof-enter" role="status">
-        <span className="grid size-12 place-items-center rounded-full bg-success-wash text-success">
-          <Check aria-hidden="true" className="size-5" />
-        </span>
-        <h2 className="mt-7 text-3xl font-semibold tracking-[-0.03em]">Wallet ready</h2>
-        <p className="mt-3 text-base leading-7 text-muted">One Arc Testnet EOA is linked to this Ordiva account.</p>
-        <div className="mt-8 border-y border-line py-5">
-          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Wallet address</span>
-          <CopyableAddress address={walletAddress} className="mt-2 text-sm leading-6" />
-        </div>
-        <Link href={returnTo} className="mt-8 inline-flex min-h-12 w-full items-center justify-center rounded-[12px] bg-ink px-5 font-semibold text-paper hover:bg-violet">
-          Continue
-        </Link>
+      <div className="flex min-h-48 items-center justify-center gap-3 text-sm text-muted" role="status" aria-live="polite">
+        <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
+        {phase === "complete" || existingSession ? "Opening your workspace…" : "Checking your session…"}
       </div>
     );
   }

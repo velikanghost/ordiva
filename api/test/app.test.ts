@@ -44,8 +44,6 @@ function config(overrides: Partial<AppConfig> = {}): AppConfig {
     APOLLO_API_KEY: "apollo-test",
     RESEND_API_KEY: "resend-test",
     RESEND_FROM_EMAIL: "Ordiva <demo@ordiva.test>",
-    EMAIL_ALLOWED_RECIPIENTS: "supplier@example.com",
-    EMAIL_ALLOWED_DOMAINS: "example.org",
     PRICE_TAVILY_SEARCH: "$0.01",
     PRICE_FIRECRAWL_SEARCH: "$0.02",
     PRICE_FIRECRAWL_SCRAPE: "$0.02",
@@ -288,23 +286,23 @@ describe("Arc adapter service", () => {
     ]);
   });
 
-  it("rejects a non-allowlisted email before requesting payment", async () => {
+  it("rejects a malformed email before requesting payment", async () => {
     const charged = vi.fn();
     const app = await createTestApp({ config: config(), paymentGate: paymentGate(charged) });
 
     await request(app.getHttpServer())
       .post("/v1/email/resend-send")
       .send({
-        to: "stranger@outside.test",
+        to: "not-an-email",
         subject: "Request for quotation",
         text: "Please send a quotation.",
         idempotencyKey: "goal-1-supplier-1"
       })
-      .expect(403);
+      .expect(400);
     expect(charged).not.toHaveBeenCalled();
   });
 
-  it("passes an idempotency key when sending an allowlisted email", async () => {
+  it("accepts any valid recipient and passes an idempotency key", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ id: "email-1" }), {
       status: 200,
       headers: { "content-type": "application/json" }
@@ -314,7 +312,7 @@ describe("Arc adapter service", () => {
     const response = await request(app.getHttpServer())
       .post("/v1/email/resend-send")
       .send({
-        to: "supplier@example.com",
+        to: "stranger@outside.test",
         subject: "Request for quotation",
         text: "Please send a quotation.",
         idempotencyKey: "goal-1-supplier-1"
@@ -323,7 +321,7 @@ describe("Arc adapter service", () => {
 
     const init = fetchMock.mock.calls[0]?.[1];
     expect(new Headers(init?.headers).get("idempotency-key")).toBe("goal-1-supplier-1");
-    expect(response.body.data).toEqual({ messageId: "email-1", to: "supplier@example.com", accepted: true });
+    expect(response.body.data).toEqual({ messageId: "email-1", to: "stranger@outside.test", accepted: true });
   });
 
   it("keeps the Arc receipt when a paid upstream request fails", async () => {

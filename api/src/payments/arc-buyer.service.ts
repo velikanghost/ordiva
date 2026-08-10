@@ -23,7 +23,10 @@ export interface PaymentReceipt {
   readonly payer?: string;
   readonly network: string;
   readonly amountMicros: bigint;
+  /** Circle Gateway transfer UUID for a batched nanopayment. */
   readonly settlement?: string;
+  /** Genuine EVM transaction hash, present only for an onchain settlement. */
+  readonly transactionHash?: string;
   readonly success: boolean;
 }
 
@@ -198,12 +201,15 @@ export class ArcBuyerService {
     paymentRequired: { accepts: Array<{ network: string; amount: string }> }
   ): PaymentReceipt {
     const [terms] = paymentRequired.accepts;
+    const transaction = settleResponse?.transaction;
+    const transactionHash = isEvmTransactionHash(transaction) ? transaction : undefined;
 
     return {
       payer: settleResponse?.payer,
       network: terms?.network ?? "unknown",
       amountMicros: terms ? BigInt(terms.amount) : 0n,
-      settlement: settleResponse?.transaction,
+      settlement: transactionHash ? undefined : transaction,
+      transactionHash,
       success: settleResponse?.success ?? false
     };
   }
@@ -237,6 +243,11 @@ export class ArcBuyerService {
 
     return { status: response.status, headers: response.headers, body: parsed };
   }
+}
+
+/** An Arcscan transaction route accepts only a full EVM transaction hash. */
+function isEvmTransactionHash(value: string | undefined): value is `0x${string}` {
+  return typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
 }
 
 interface RawResponse {

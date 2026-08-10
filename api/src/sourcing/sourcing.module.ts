@@ -1,6 +1,7 @@
 import { Module, type DynamicModule } from "@nestjs/common";
 import { MongooseModule } from "@nestjs/mongoose";
 import { AgentWalletModule } from "../agent-wallet/agent-wallet.module.js";
+import { WalletsModule } from "../wallets/wallets.module.js";
 import type { SourcingConfig } from "../config.js";
 import { createOpenAIPlanGenerator } from "./openai-plan.generator.js";
 import { createFirecrawlSupplierSearch } from "./firecrawl-supplier-search.js";
@@ -10,6 +11,8 @@ import { SourcingController } from "./sourcing.controller.js";
 import type { SourcingPlanGenerator, SupplierSearch } from "./sourcing.schemas.js";
 import { SourcingService } from "./sourcing.service.js";
 import { VerificationService, type BuyerFactory } from "./verification.service.js";
+import { OutreachService } from "./outreach.service.js";
+import { RegistryActivityService } from "./registry-activity.service.js";
 import { ArcBuyerService } from "../payments/arc-buyer.service.js";
 import type { ArcPaymentSigner } from "../payments/arc-signer.js";
 import {
@@ -34,7 +37,8 @@ export class SourcingModule {
       module: SourcingModule,
       imports: [
         MongooseModule.forFeature([{ name: SourcingRun.name, schema: SourcingRunSchema }]),
-        AgentWalletModule.register({ config: options.config })
+        AgentWalletModule.register({ config: options.config }),
+        WalletsModule
       ],
       controllers: [SourcingController],
       providers: [
@@ -53,7 +57,9 @@ export class SourcingModule {
         },
         RunsService,
         SourcingService,
-        VerificationService
+        VerificationService,
+        OutreachService,
+        RegistryActivityService
       ]
     };
   }
