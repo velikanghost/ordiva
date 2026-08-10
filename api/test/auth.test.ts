@@ -34,8 +34,6 @@ function config(): AccountsConfig {
     GATEWAY_WALLET_ADDRESS: "0x0077777d7EBA4688BDeF3E311b846F25870A19B9",
     ARC_ADAPTER_SELLER_ADDRESS: "0x1111111111111111111111111111111111111111",
     CIRCLE_GATEWAY_FACILITATOR_URL: "https://gateway-api-testnet.circle.com",
-    EMAIL_ALLOWED_RECIPIENTS: "",
-    EMAIL_ALLOWED_DOMAINS: "",
     PRICE_TAVILY_SEARCH: "$0.01",
     PRICE_FIRECRAWL_SEARCH: "$0.02",
     PRICE_FIRECRAWL_SCRAPE: "$0.02",
@@ -48,6 +46,7 @@ function config(): AccountsConfig {
 const user: UserView = {
   id: "user-1",
   circleUserId: "circle-user-1",
+  email: "buyer@example.com",
   status: "active"
 };
 
@@ -141,7 +140,7 @@ describe("Circle email authentication", () => {
       }] } }));
     const setup = await createAuthApp(fetchMock);
     const tokenService = setup.testingModule.get(SessionTokenService);
-    const state = await tokenService.issueLoginState(randomUUID());
+    const state = await tokenService.issueLoginState(randomUUID(), user.email);
 
     const session = await request(setup.app.getHttpServer())
       .post("/v1/auth/session")
@@ -166,7 +165,7 @@ describe("Circle email authentication", () => {
       .mockResolvedValueOnce(await circleResponse({ data: { wallets: [] } }))
       .mockResolvedValueOnce(await circleResponse({ data: { challengeId: "challenge-1" } }));
     const setup = await createAuthApp(fetchMock);
-    const state = await setup.testingModule.get(SessionTokenService).issueLoginState(randomUUID());
+    const state = await setup.testingModule.get(SessionTokenService).issueLoginState(randomUUID(), user.email);
 
     const response = await request(setup.app.getHttpServer())
       .post("/v1/auth/session")
@@ -194,7 +193,7 @@ describe("Circle email authentication", () => {
       .mockResolvedValueOnce(await circleResponse({ code: 155106, message: "already initialized" }, 400))
       .mockResolvedValueOnce(await circleResponse({ data: { challengeId: "challenge-2" } }));
     const setup = await createAuthApp(fetchMock);
-    const state = await setup.testingModule.get(SessionTokenService).issueLoginState(randomUUID());
+    const state = await setup.testingModule.get(SessionTokenService).issueLoginState(randomUUID(), user.email);
 
     const response = await request(setup.app.getHttpServer())
       .post("/v1/auth/session")
@@ -216,7 +215,7 @@ describe("Circle email authentication", () => {
         state: "LIVE"
       }] } }));
     const setup = await createAuthApp(fetchMock);
-    const state = await setup.testingModule.get(SessionTokenService).issueLoginState(randomUUID());
+    const state = await setup.testingModule.get(SessionTokenService).issueLoginState(randomUUID(), user.email);
 
     const response = await request(setup.app.getHttpServer())
       .post("/v1/auth/session")

@@ -3,6 +3,7 @@ import { z } from "zod";
 export const ARC_TESTNET_CAIP2 = "eip155:5042002" as const;
 
 const addressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
+const optionalAddress = z.preprocess((value) => value === "" ? undefined : value, addressSchema.optional());
 const priceSchema = z.string().regex(/^\$(?:0|[1-9]\d*)(?:\.\d{1,6})?$/);
 const optionalString = z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional());
 const optionalUrl = z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional());
@@ -27,14 +28,14 @@ const envSchema = z.object({
   USDC_ADDRESS: addressSchema.default("0x3600000000000000000000000000000000000000"),
   GATEWAY_WALLET_ADDRESS: addressSchema.default("0x0077777d7EBA4688BDeF3E311b846F25870A19B9"),
   ARC_ADAPTER_SELLER_ADDRESS: addressSchema,
+  /** Optional deployed OrdivaRegistry used to anchor policy and outreach approvals. */
+  ARC_REGISTRY_ADDRESS: optionalAddress,
   CIRCLE_GATEWAY_FACILITATOR_URL: z.string().url().default("https://gateway-api-testnet.circle.com"),
   TAVILY_API_KEY: z.string().min(1).optional(),
   FIRECRAWL_API_KEY: z.string().min(1).optional(),
   APOLLO_API_KEY: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_FROM_EMAIL: z.string().min(3).optional(),
-  EMAIL_ALLOWED_RECIPIENTS: z.string().default(""),
-  EMAIL_ALLOWED_DOMAINS: z.string().default(""),
   // Per-action prices are held at or below $0.01: the point of a nanopayment rail
   // is that an individual service call can cost a fraction of a cent.
   PRICE_TAVILY_SEARCH: priceSchema.default("$0.01"),
@@ -76,14 +77,7 @@ export function agentWalletConfigured(config: AppConfig): config is AgentWalletC
 }
 
 export function sourcingConfigured(config: AppConfig): config is SourcingConfig {
-  return agentWalletConfigured(config) && Boolean(config.OPENAI_API_KEY && config.FIRECRAWL_API_KEY);
-}
-
-export function commaSeparatedSet(value: string): ReadonlySet<string> {
-  return new Set(
-    value
-      .split(",")
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean)
+  return agentWalletConfigured(config) && (
+    config.ORDIVA_UPSTREAM_MODE === "disabled" || Boolean(config.OPENAI_API_KEY && config.FIRECRAWL_API_KEY)
   );
 }

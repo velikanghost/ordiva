@@ -42,7 +42,7 @@ const steps = [
     description: "Email outreach is never dispatched without explicit user review of the recipient, subject, and draft.",
     spec: {
       dispatchAdapter: "Resend Email ($0.01 USDC)",
-      allowlistCheck: "Enforced recipient allowlist",
+      recipientValidation: "Any valid email address",
       signOffRequired: "One-click human approval",
       autoSend: "Blocked by default",
     },
@@ -118,7 +118,7 @@ export function PolicyInspector() {
       <div className="mt-6 border-t border-line pt-5">
         <div className="flex items-center gap-3 text-xs leading-5 text-muted">
           <ShieldCheck aria-hidden="true" className="size-4 shrink-0 text-success" />
-          <span>Deterministic rules enforce network, exact prices, allowlists, and response schemas.</span>
+          <span>Deterministic rules enforce network, exact prices, input validation, and response schemas.</span>
         </div>
       </div>
     </div>

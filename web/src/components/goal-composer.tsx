@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { apiJson, ApiError } from "@/lib/api";
 import type { SourcingRun } from "@/lib/run";
 import { useSessionStore } from "@/lib/session-store";
+import { fetchCatalog, type AdapterCatalog } from "@/lib/catalog";
 
 export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: string; initialBudget?: string }) {
   const router = useRouter();
@@ -17,10 +18,22 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
   const [budget, setBudget] = useState(initialBudget || "2.00");
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [catalog, setCatalog] = useState<AdapterCatalog | null>(null);
 
   useEffect(() => {
     if (!hydrated) hydrate();
   }, [hydrate, hydrated]);
+
+  useEffect(() => {
+    void fetchCatalog().then(setCatalog).catch(() => undefined);
+  }, []);
+
+  const verificationIds = new Set(["firecrawl-scrape", "apollo-company-enrich", "firecrawl-contacts"]);
+  const verificationAdapters = catalog?.adapters.filter((adapter) => verificationIds.has(adapter.id)) ?? [];
+  const estimatedVerification = verificationAdapters.reduce(
+    (total, adapter) => total + Number(adapter.price.replace("$", "")),
+    0,
+  ) * 3;
 
   return (
     <form
@@ -123,19 +136,26 @@ export function GoalComposer({ initialGoal, initialBudget }: { initialGoal?: str
           </p>
         </div>
         <div>
-          <span className="text-sm font-semibold">Metered Adapters</span>
+          <span className="text-sm font-semibold">Verification estimate</span>
           <div className="mt-3 flex flex-wrap items-center gap-1.5 min-h-12 rounded-[12px] border border-line bg-canvas px-3 py-2 text-xs">
-            <span className="rounded-md bg-paper border border-line px-2 py-0.5 font-mono text-ink">Tavily ($0.01)</span>
-            <span className="rounded-md bg-paper border border-line px-2 py-0.5 font-mono text-ink">Firecrawl ($0.02)</span>
-            <span className="rounded-md bg-paper border border-line px-2 py-0.5 font-mono text-ink">Apollo ($0.03)</span>
+            {verificationAdapters.length ? verificationAdapters.map((adapter) => (
+              <span key={adapter.id} className="rounded-md border border-line bg-paper px-2 py-0.5 font-mono text-ink">
+                {adapter.upstreamProvider} {adapter.price}
+              </span>
+            )) : <span className="text-muted">Loading live catalog…</span>}
           </div>
+          {verificationAdapters.length ? (
+            <p className="mt-2 text-xs leading-5 text-muted">
+              Approximately ${estimatedVerification.toFixed(4)} for three suppliers · {catalog?.upstreamMode === "disabled" ? "demo responses" : "live upstreams"}
+            </p>
+          ) : null}
         </div>
       </div>
 
       <div className="mt-auto pt-8">
         <div className="flex items-start gap-3 border-t border-line pt-5 text-sm leading-6 text-muted">
           <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-success" />
-          Planning and public supplier discovery run automatically. Paid Arc verification remains policy-controlled, and email always waits for your approval.
+          Planning, discovery, and paid Arc verification run automatically within this budget. Email always waits for your approval.
         </div>
         {isRunning ? (
           <div

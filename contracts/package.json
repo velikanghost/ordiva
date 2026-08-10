@@ -1,0 +1,12 @@
+{
+  "name": "@ordiva/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "forge build",
+    "test": "pnpm run build && forge test --offline -vv",
+    "clean": "forge clean",
+    "fmt": "forge fmt --check"
+  }
+}

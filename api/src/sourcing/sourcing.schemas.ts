@@ -67,7 +67,7 @@ export interface PlannedSourcingRun {
     arcPayment: null;
   };
   nextAction: {
-    type: "supplier_verification_pending";
+    type: "supplier_verification_automatic";
     description: string;
     supplierCount: number;
   };

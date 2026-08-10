@@ -15,6 +15,7 @@ import { RunsService } from "../src/sourcing/runs.service.js";
 import { formatUsdcExact } from "../src/payments/money.js";
 import type { SourcingRun } from "../src/sourcing/run.schema.js";
 import { VerificationService } from "../src/sourcing/verification.service.js";
+import { OutreachService } from "../src/sourcing/outreach.service.js";
 import {
   SOURCING_CONFIG,
   SOURCING_PLAN_GENERATOR,
@@ -47,8 +48,6 @@ function config(overrides: Partial<SourcingConfig> = {}): SourcingConfig {
     GATEWAY_WALLET_ADDRESS: "0x0077777d7EBA4688BDeF3E311b846F25870A19B9",
     ARC_ADAPTER_SELLER_ADDRESS: "0x1111111111111111111111111111111111111111",
     CIRCLE_GATEWAY_FACILITATOR_URL: "https://gateway-api-testnet.circle.com",
-    EMAIL_ALLOWED_RECIPIENTS: "",
-    EMAIL_ALLOWED_DOMAINS: "",
     PRICE_TAVILY_SEARCH: "$0.01",
     PRICE_FIRECRAWL_SEARCH: "$0.02",
     PRICE_FIRECRAWL_SCRAPE: "$0.02",
@@ -97,7 +96,8 @@ class AuthenticatedGuard implements CanActivate {
     context.switchToHttp().getRequest().auth = {
       kind: "session",
       sub: "user-1",
-      circleUserId: "circle-user-1"
+      circleUserId: "circle-user-1",
+      email: "buyer@example.com"
     };
     return true;
   }
@@ -110,28 +110,38 @@ async function createApp(
 ) {
   // Persistence and the paid verification stage are exercised by their own suites;
   // here they are stubbed so these tests stay focused on planning and discovery.
+  let persistedRun: Record<string, unknown> | null = null;
   const runs = {
     // Mirrors the shape `RunsService.create` returns, so assertions here still
     // describe the contract the browser actually receives.
-    create: vi.fn(async (run: Omit<SourcingRun, "createdAt" | "updatedAt">) => ({
-      id: "6a739b60e915db8c861f5af3",
-      status: run.status,
-      goal: run.goal,
-      supplierMinimum: run.supplierMinimum,
-      budget: {
-        limit: formatUsdcExact(BigInt(run.budgetMicros)),
-        spent: formatUsdcExact(0n),
-        remaining: formatUsdcExact(BigInt(run.budgetMicros))
-      },
-      plan: run.plan,
-      suppliers: run.suppliers,
-      purchases: [],
-      research: run.research,
-      createdAt: new Date().toISOString()
-    })),
+    create: vi.fn(async (run: Omit<SourcingRun, "createdAt" | "updatedAt">) => {
+      persistedRun = {
+        id: "6a739b60e915db8c861f5af3",
+        status: run.status,
+        goal: run.goal,
+        supplierMinimum: run.supplierMinimum,
+        budget: {
+          limit: formatUsdcExact(BigInt(run.budgetMicros)),
+          spent: formatUsdcExact(0n),
+          remaining: formatUsdcExact(BigInt(run.budgetMicros))
+        },
+        plan: run.plan,
+        suppliers: run.suppliers,
+        purchases: [],
+        research: run.research,
+        createdAt: new Date().toISOString()
+      };
+      return persistedRun;
+    }),
     listForUser: vi.fn(async () => []),
     view: vi.fn(async () => null),
     getOwned: vi.fn(async () => null)
+  };
+  const verification = {
+    startVerification: vi.fn(async () => {
+      if (!persistedRun) throw new Error("Run was not persisted before verification");
+      return { ...persistedRun, status: "verifying" };
+    })
   };
 
   const builder = Test.createTestingModule({
@@ -141,7 +151,8 @@ async function createApp(
       { provide: SOURCING_PLAN_GENERATOR, useValue: generator },
       { provide: SOURCING_SUPPLIER_SEARCH, useValue: search },
       { provide: RunsService, useValue: runs },
-      { provide: VerificationService, useValue: { verify: vi.fn() } },
+      { provide: VerificationService, useValue: verification },
+      { provide: OutreachService, useValue: {} },
       SourcingService
     ]
   });
@@ -176,7 +187,7 @@ describe("OpenAI sourcing plan boundary", () => {
     expect(loaded.OPENAI_API_KEY).toBe("openai-test-key");
   });
 
-  it("plans and autonomously discovers distinct suppliers while keeping payment and email unauthorized", async () => {
+  it("plans, discovers, and automatically schedules verification while keeping email unauthorized", async () => {
     const generator = vi.fn<SourcingPlanGenerator>().mockResolvedValue(generatedPlan);
     const search = supplierSearch();
     const app = await createApp(generator, search);
@@ -195,7 +206,7 @@ describe("OpenAI sourcing plan boundary", () => {
       supplierMinimum: 3
     }));
     expect(response.body).toMatchObject({
-      status: "research_ready",
+      status: "verifying",
       budget: { limit: "$0.250000", spent: "$0.000000", remaining: "$0.250000" },
       research: { provider: "Firecrawl", queriesExecuted: 3, creditsUsed: 3 }
     });
@@ -205,10 +216,14 @@ describe("OpenAI sourcing plan boundary", () => {
       "pump-two.example",
       "pump-three.example"
     ]);
-    // Candidates stay unverified until paid evidence has actually been gathered.
+    // Scheduling is immediate; candidates stay unverified until paid evidence arrives.
     expect(response.body.suppliers.every((supplier: { verified: boolean }) => !supplier.verified)).toBe(true);
     expect(response.body.purchases).toEqual([]);
     expect(search).toHaveBeenCalledTimes(3);
+    expect(app.get(VerificationService).startVerification).toHaveBeenCalledWith(
+      "6a739b60e915db8c861f5af3",
+      "user-1"
+    );
   });
 
   it("returns mock plan and candidate suppliers without calling OpenAI or Firecrawl when live upstreams are disabled", async () => {
@@ -225,7 +240,7 @@ describe("OpenAI sourcing plan boundary", () => {
       })
       .expect(201);
 
-    expect(response.body.status).toBe("research_ready");
+    expect(response.body.status).toBe("verifying");
     expect(response.body.suppliers).toHaveLength(3);
     expect(generator).not.toHaveBeenCalled();
     expect(search).not.toHaveBeenCalled();

@@ -6,6 +6,9 @@ export class User {
   @Prop({ type: String, required: true, unique: true, index: true })
   circleUserId!: string;
 
+  @Prop({ type: String, required: true })
+  email!: string;
+
   @Prop({ type: String, required: true, enum: ["active"], default: "active" })
   status!: "active";
 

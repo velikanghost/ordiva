@@ -37,6 +37,9 @@ The current run flow:
 7. Results are normalized and deduplicated by supplier domain, capped at the requested candidate count.
 8. **The agent buys evidence for each candidate** — scrape, company enrichment, contact discovery — paying per call from its own escrowed balance, unattended.
 9. The workbench shows the live spend meter and a decision ledger: every purchase, its reason, price, outcome, and settlement reference.
+10. Verified suppliers with public contacts receive persisted RFQ drafts.
+11. The operator reviews the exact recipient, subject, and body; approval is bound to that draft's SHA-256 hash and invalidated by any edit.
+12. The agent buys the Resend delivery through the same budget-gated x402 rail and records both the email receipt and Arc settlement.
 
 Public-web discovery is explicitly reported as a **zero-wallet-charge step**. Email delivery is not claimed until the corresponding authorization and receipt exist.
 
@@ -51,7 +54,7 @@ Ordiva is not a chat wrapper around a search API. Its complete product loop is s
 - it can adapt when a provider fails or evidence is weak;
 - and it can decide when the job is complete.
 
-The current MVP proves the planning and discovery stage plus the Arc x402 seller rail. When those paths are connected, the LLM may recommend the next useful purchase, but it will never authorize payment: deterministic code validates the network, service, seller, schema, budget, and allowlist before authorization can proceed.
+The current MVP connects planning, discovery, paid verification, exact-draft outreach approval, and Resend delivery through the Arc x402 seller rail. The LLM may recommend useful work, but it never authorizes payment or email: deterministic code validates the network, service, seller, schema, budget, recipient syntax, and approved content hash before execution.
 
 ## Why Arc
 
@@ -152,7 +155,7 @@ The bridge between them is the agent wallet: an Ordiva-operated Arc EOA, funded 
 | Enforce the budget and exact price | Deterministic code | Implemented, before signing |
 | Stop when the budget is exhausted | Deterministic code | Implemented |
 | Validate request and response schemas | Deterministic code | Implemented |
-| Authorize email recipients | Deterministic code plus explicit user approval | Allowlist implemented; run approval next |
+| Authorize email recipients and content | Deterministic code plus explicit user approval | Implemented with versioned content hashes |
 
 The budget gate runs **before any signature exists**, so a refused purchase leaves no
 authorisation behind. Every refusal is recorded on the run with its reason — what the agent
@@ -253,7 +256,7 @@ the budget, not the keys.
 - Request validation and safety preflight run before payment.
 - Metered upstream execution is an explicit opt-in independent of `NODE_ENV`.
 - Scraping rejects private, loopback, and local network targets.
-- Email requires an exact recipient or domain allowlist.
+- Email accepts any syntactically valid recipient entered in the reviewed draft.
 - Resend requests require an idempotency key.
 - A paid upstream failure retains its payment receipt.
 - One user wallet and one agent wallet are enforced per user.
@@ -330,7 +333,7 @@ Metered conventional upstream calls are disabled by default. To deliberately use
 ORDIVA_UPSTREAM_MODE=live
 ```
 
-With `ORDIVA_UPSTREAM_MODE=disabled`, sourcing stops before OpenAI or Firecrawl and paid adapter routes reject the request before x402 payment.
+With `ORDIVA_UPSTREAM_MODE=disabled`, sourcing and adapter responses use deterministic demo fixtures without consuming OpenAI, Firecrawl, Tavily, Apollo, or Resend credits. The x402 adapter boundary remains visible so payment-policy behavior can still be exercised. Set `live` only when real upstream execution and settlement are intended.
 
 ### Run
 
@@ -374,8 +377,6 @@ To use a different API origin, set `ORDIVA_API_URL` for the web process.
 | `APOLLO_API_KEY` | Optional adapter | Company enrichment |
 | `RESEND_API_KEY` | Optional adapter | Email delivery |
 | `RESEND_FROM_EMAIL` | Email | Verified sender identity |
-| `EMAIL_ALLOWED_RECIPIENTS` | Email safety | Comma-separated exact recipients |
-| `EMAIL_ALLOWED_DOMAINS` | Email safety | Comma-separated approved domains |
 | `PRICE_*` | Adapter pricing | Per-route USDC prices such as `$0.02` |
 
 See [`api/.env.example`](./api/.env.example) for the complete configuration contract.
@@ -403,11 +404,11 @@ The current repository passes:
 - the NestJS production build;
 - and the Next.js production build on Node.js 22.
 
-Alongside the original coverage — Circle authentication boundaries, one-wallet enforcement, adapter validation, Arc-only 402 challenges, normalized provider responses, supplier deduplication, email allowlists, idempotency, and paid upstream failure receipts — the tests now cover the payment path itself:
+Alongside the original coverage — Circle authentication boundaries, one-wallet enforcement, adapter validation, Arc-only 402 challenges, normalized provider responses, supplier deduplication, email validation, idempotency, and paid upstream failure receipts — the tests now cover the payment path itself:
 
 - the agent signer's typed-data handling, including the `EIP712Domain` entry Circle requires and the `bigint` serialisation the batching SDK forces;
 - rejection of any signature that is not 65-byte ECDSA, so a smart-contract account fails loudly rather than at the facilitator;
-- the budget gate refusing on budget, adapter, network, and recipient grounds **before a signature exists**;
+- the budget gate refusing on budget, adapter, and network grounds **before a signature exists**;
 - funding challenge ordering, and that `approve` targets the USDC token while `depositFor` targets the Gateway;
 - the verification loop's spend accumulation, decline handling, evidence extraction, and candidate cap.
 
@@ -424,7 +425,7 @@ Alongside the original coverage — Circle authentication boundaries, one-wallet
 - paid evidence verification per candidate: scrape, enrichment, contact discovery
 - six Arc-only x402 seller routes, all priced at or below `$0.01`
 - operator workbench with a live spend meter and decision ledger
-- allowlisted, idempotent Resend adapter
+- valid-recipient, idempotent Resend adapter
 
 ### Next
 

@@ -4,11 +4,11 @@
   "type": "module",
   "packageManager": "pnpm@10.15.1",
   "scripts": {
-    "build": "pnpm --filter @ordiva/api build && pnpm --filter @ordiva/web build",
+    "build": "pnpm --filter @ordiva/contracts build && pnpm --filter @ordiva/api build && pnpm --filter @ordiva/web build",
     "dev:api": "pnpm --filter @ordiva/api dev",
     "dev:web": "pnpm --filter @ordiva/web dev",
     "lint": "eslint api/src api/test && pnpm --filter @ordiva/web lint",
-    "test": "pnpm --filter @ordiva/api test",
+    "test": "pnpm --filter @ordiva/contracts test && pnpm --filter @ordiva/api test",
     "typecheck": "pnpm --filter @ordiva/api typecheck && pnpm --filter @ordiva/web typecheck"
   },
   "devDependencies": {

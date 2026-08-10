@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Optional,
   ServiceUnavailableException
 } from "@nestjs/common";
 import type { SourcingConfig } from "../config.js";
@@ -22,6 +23,7 @@ import {
   SOURCING_PLAN_GENERATOR,
   SOURCING_SUPPLIER_SEARCH
 } from "./sourcing.tokens.js";
+import { RegistryActivityService } from "./registry-activity.service.js";
 
 @Injectable()
 export class SourcingService {
@@ -29,7 +31,8 @@ export class SourcingService {
     @Inject(SOURCING_CONFIG) private readonly config: SourcingConfig,
     @Inject(SOURCING_PLAN_GENERATOR) private readonly generatePlan: SourcingPlanGenerator,
     @Inject(SOURCING_SUPPLIER_SEARCH) private readonly searchSuppliers: SupplierSearch,
-    @Inject(RunsService) private readonly runs: RunsService
+    @Inject(RunsService) private readonly runs: RunsService,
+    @Optional() @Inject(RegistryActivityService) private readonly registry?: RegistryActivityService
   ) {}
 
   /**
@@ -45,7 +48,7 @@ export class SourcingService {
   async planAndPersist(userId: string, rawInput: CreateSourcingRunInput): Promise<RunView> {
     const planned = await this.plan(userId, rawInput);
 
-    return this.runs.create({
+    const run = await this.runs.create({
       userId,
       goal: planned.goal,
       supplierMinimum: planned.supplierMinimum,
@@ -53,14 +56,25 @@ export class SourcingService {
       spentMicros: "0",
       status: "research_ready",
       plan: planned.plan,
-      suppliers: planned.suppliers.map((supplier) => ({ ...supplier, verified: false, evidence: [] })),
+      suppliers: planned.suppliers.map((supplier) => ({
+        ...supplier,
+        verified: false,
+        verificationStatus: "unverified" as const,
+        evidence: [],
+        contacts: []
+      })),
       purchases: [],
+      outreach: [],
+      contractActivities: [],
+      verificationAttempts: 0,
       research: {
         provider: planned.research.provider,
         queriesExecuted: planned.research.queriesExecuted,
         creditsUsed: planned.research.creditsUsed
       }
     });
+    await this.registry?.registerRun(run.id, userId);
+    return run;
   }
 
   async plan(userId: string, rawInput: CreateSourcingRunInput): Promise<PlannedSourcingRun> {
@@ -132,8 +146,8 @@ export class SourcingService {
         arcPayment: null
       },
       nextAction: {
-        type: "supplier_verification_pending",
-        description: "Verify public evidence for the discovered supplier candidates before outreach",
+        type: "supplier_verification_automatic",
+        description: "Automatically verify public evidence for discovered candidates before outreach",
         supplierCount: suppliers.length
       },
       permissions: {
@@ -243,8 +257,8 @@ export class SourcingService {
         arcPayment: null
       },
       nextAction: {
-        type: "supplier_verification_pending",
-        description: "Verify public evidence for the discovered supplier candidates before outreach",
+        type: "supplier_verification_automatic",
+        description: "Automatically verify public evidence for discovered candidates before outreach",
         supplierCount: 3
       },
       permissions: {

@@ -1,4 +1,11 @@
-import { ConflictException, Inject, Injectable, Logger } from "@nestjs/common";
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  type OnApplicationBootstrap
+} from "@nestjs/common";
 import { AgentWalletService } from "../agent-wallet/agent-wallet.service.js";
 import { ARC_TESTNET_CAIP2, type SourcingConfig } from "../config.js";
 import type { PurchaseOutcome, PurchaseRequest } from "../payments/arc-buyer.service.js";
@@ -9,6 +16,7 @@ import { toMicros } from "../payments/money.js";
 import type { RunPurchase, RunSupplier } from "./run.schema.js";
 import { RunsService, type RunView } from "./runs.service.js";
 import { SOURCING_CONFIG } from "./sourcing.tokens.js";
+import { RegistryActivityService } from "./registry-activity.service.js";
 
 /** The buying capability verification needs, narrowed so tests can supply a fake. */
 export interface EvidenceBuyer {
@@ -27,6 +35,7 @@ interface EvidenceStep {
   readonly body: (supplier: RunSupplier) => unknown;
   /** Pull a human-readable note out of the adapter response for the ledger. */
   readonly evidence: (data: unknown) => string | null;
+  readonly contacts?: (data: unknown) => string[];
 }
 
 const EVIDENCE_STEPS: readonly EvidenceStep[] = [
@@ -63,9 +72,15 @@ const EVIDENCE_STEPS: readonly EvidenceStep[] = [
     evidence: (data) => {
       const contacts = readArray(data, "contacts");
       return contacts.length > 0 ? `${contacts.length} public contact route(s) found` : null;
-    }
+    },
+    contacts: (data) => readArray(data, "contacts")
+      .map((item) => readString(item, "email"))
+      .filter((email): email is string => Boolean(email))
   }
 ];
+
+const VERIFICATION_LEASE_MS = 10 * 60 * 1000;
+const REQUIRED_EVIDENCE = new Set(["firecrawl-scrape", "apollo-company-enrich"]);
 
 /**
  * Runs the paid evidence stage of a sourcing run.
@@ -75,7 +90,7 @@ const EVIDENCE_STEPS: readonly EvidenceStep[] = [
  * order, and against what budget is decided by code, not by the model.
  */
 @Injectable()
-export class VerificationService {
+export class VerificationService implements OnApplicationBootstrap {
   private readonly logger = new Logger(VerificationService.name);
 
   /** Verifications running in this process, keyed by run id. */
@@ -85,8 +100,14 @@ export class VerificationService {
     @Inject(SOURCING_CONFIG) private readonly config: SourcingConfig,
     @Inject(RunsService) private readonly runs: RunsService,
     @Inject(AgentWalletService) private readonly agentWallets: AgentWalletService,
-    @Inject(SOURCING_BUYER_FACTORY) private readonly createBuyer: BuyerFactory
+    @Inject(SOURCING_BUYER_FACTORY) private readonly createBuyer: BuyerFactory,
+    @Optional() @Inject(RegistryActivityService) private readonly registry?: RegistryActivityService
   ) {}
+
+  async onApplicationBootstrap(): Promise<void> {
+    const jobs = await this.runs.resumeableVerifications();
+    for (const job of jobs) this.schedule(job.id, job.userId);
+  }
 
   /**
    * Begin verification and return immediately.
@@ -104,26 +125,31 @@ export class VerificationService {
     const run = await this.runs.getOwned(runId, userId);
 
     if (run.status === "verified") return this.runs.view(runId, userId);
-    if (run.status === "verifying" && !isStale(run.updatedAt)) {
-      throw new ConflictException("This run is already being verified");
-    }
+    const claimed = await this.runs.claimVerification(
+      runId,
+      userId,
+      new Date(Date.now() + VERIFICATION_LEASE_MS)
+    );
+    if (!claimed) throw new ConflictException("This run is already being verified");
 
-    await this.runs.setStatus(runId, "verifying");
+    this.schedule(runId, userId);
+    return this.runs.view(runId, userId);
+  }
 
-    // Deliberately not awaited: the HTTP response must not wait for the spending.
+  private schedule(runId: string, userId: string): void {
+    if (this.inFlight.has(runId)) return;
     const task = this.runEvidencePurchases(runId, userId)
       .catch((error: unknown) => {
         this.logger.error(
           `Run ${runId}: verification aborted — ${error instanceof Error ? error.message : String(error)}`
         );
-        // Leave the run retryable rather than stuck in `verifying` forever.
-        return this.runs.setStatus(runId, "research_ready");
+        // Automatic verification has no human checkpoint to return to. Record a
+        // terminal failure instead of leaving the run looking ready for a click.
+        return this.runs.setStatus(runId, "verification_failed");
       })
       .finally(() => this.inFlight.delete(runId));
 
     this.inFlight.set(runId, task);
-
-    return this.runs.view(runId, userId);
   }
 
   /**
@@ -153,12 +179,24 @@ export class VerificationService {
     let spentMicros = BigInt(run.spentMicros);
     const budgetMicros = BigInt(run.budgetMicros);
     let stoppedForBudget = false;
+    let verifiedCount = 0;
 
     for (const supplier of run.suppliers) {
       if (stoppedForBudget) break;
       const evidence: string[] = [];
+      const contacts: string[] = [];
+      const successful = new Set<string>();
 
       for (const step of EVIDENCE_STEPS) {
+        const existing = (run.purchases ?? []).find((purchase) =>
+          purchase.supplierId === supplier.id &&
+          purchase.adapterId === step.adapterId &&
+          purchase.outcome === "settled"
+        );
+        if (existing) {
+          successful.add(step.adapterId);
+          continue;
+        }
         const priceMicros = toMicros(step.price(this.config));
 
         const outcome = await buyer.purchase({
@@ -173,11 +211,18 @@ export class VerificationService {
           runId,
           this.toLedgerEntry(step, supplier, priceMicros, outcome)
         );
+        await this.runs.renewVerificationLease(
+          runId,
+          new Date(Date.now() + VERIFICATION_LEASE_MS)
+        );
 
         if (outcome.status === "settled") {
           spentMicros += outcome.receipt.amountMicros;
-          const note = step.evidence(unwrapAdapterData(outcome.data));
+          const data = unwrapAdapterData(outcome.data);
+          const note = step.evidence(data);
           if (note) evidence.push(note);
+          contacts.push(...(step.contacts?.(data) ?? []));
+          successful.add(step.adapterId);
           continue;
         }
 
@@ -192,12 +237,30 @@ export class VerificationService {
         this.logger.warn(`Run ${runId}: ${step.adapterId} failed — ${outcome.reason}`);
       }
 
-      if (evidence.length > 0) {
-        await this.runs.markSupplierVerified(runId, supplier.id, evidence);
-      }
+      const hasRequiredEvidence = [...REQUIRED_EVIDENCE].every((id) => successful.has(id));
+      const status = hasRequiredEvidence
+        ? "verified"
+        : successful.size > 0
+          ? "insufficient_evidence"
+          : "failed";
+      if (status === "verified") verifiedCount += 1;
+      await this.runs.setSupplierVerification(runId, supplier.id, {
+        status,
+        evidence,
+        contacts: [...new Set(contacts)]
+      });
     }
 
-    await this.runs.setStatus(runId, stoppedForBudget ? "budget_exhausted" : "verified");
+    const required = run.supplierMinimum ?? run.suppliers.length;
+    const finalStatus = stoppedForBudget
+      ? "budget_exhausted"
+      : verifiedCount >= required
+        ? "verified"
+        : verifiedCount > 0
+          ? "partially_verified"
+          : "verification_failed";
+    await this.runs.setStatus(runId, finalStatus);
+    await this.registry?.finalizeRun(runId, userId);
   }
 
   /**
@@ -248,6 +311,7 @@ export class VerificationService {
         outcome: "settled",
         priceMicros: outcome.receipt.amountMicros.toString(),
         settlement: outcome.receipt.settlement,
+        transactionHash: outcome.receipt.transactionHash,
         payer: outcome.receipt.payer,
         network: outcome.receipt.network,
         responseHash: outcome.responseHash,
@@ -265,28 +329,11 @@ export class VerificationService {
       failureReason: outcome.reason,
       latencyMs: outcome.latencyMs,
       settlement: outcome.receipt?.settlement,
+      transactionHash: outcome.receipt?.transactionHash,
       payer: outcome.receipt?.payer,
       network: outcome.receipt?.network
     };
   }
-}
-
-/**
- * How long a `verifying` run may sit untouched before it is treated as abandoned.
- *
- * A process that dies mid-run would otherwise leave the run wedged in `verifying`
- * with no way to retry.
- */
-const STALE_VERIFICATION_MS = 10 * 60 * 1000;
-
-/**
- * Has a run been left in `verifying` long enough to assume its worker died?
- *
- * @param updatedAt - When the run was last written.
- */
-function isStale(updatedAt: Date | undefined): boolean {
-  if (!updatedAt) return true;
-  return Date.now() - updatedAt.getTime() > STALE_VERIFICATION_MS;
 }
 
 /**

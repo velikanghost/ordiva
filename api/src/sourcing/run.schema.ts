@@ -1,7 +1,23 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 import type { HydratedDocument } from "mongoose";
 
-export type RunStatus = "research_ready" | "verifying" | "verified" | "budget_exhausted";
+export type RunStatus =
+  | "research_ready"
+  | "verifying"
+  | "verified"
+  | "partially_verified"
+  | "verification_failed"
+  | "budget_exhausted";
+export type SupplierVerificationStatus =
+  | "unverified"
+  | "verifying"
+  | "verified"
+  | "insufficient_evidence"
+  | "failed";
+export type OutreachStatus = "draft" | "approved" | "queued" | "sending" | "sent" | "failed";
+export type OutreachTestStatus = "sending" | "sent" | "failed";
+export type ContractActivityType = "run_registered" | "ledger_anchored" | "run_closed";
+export type ContractActivityState = "pending" | "submitted" | "confirmed" | "failed";
 
 /** What became of one attempted purchase. */
 export type PurchaseOutcomeStatus = "settled" | "declined" | "failed";
@@ -34,6 +50,10 @@ export class RunPurchase {
 
   @Prop({ type: String, required: false })
   settlement?: string;
+
+  /** A genuine EVM transaction hash; never a Circle Gateway transfer UUID. */
+  @Prop({ type: String, required: false })
+  transactionHash?: string;
 
   @Prop({ type: String, required: false })
   payer?: string;
@@ -82,12 +102,134 @@ export class RunSupplier {
   @Prop({ type: Boolean, required: true, default: false })
   verified!: boolean;
 
+  @Prop({
+    type: String,
+    required: true,
+    enum: ["unverified", "verifying", "verified", "insufficient_evidence", "failed"],
+    default: "unverified"
+  })
+  verificationStatus!: SupplierVerificationStatus;
+
   /** Human-readable evidence notes, populated by the verification stage. */
   @Prop({ type: [String], required: true, default: [] })
   evidence!: string[];
+
+  @Prop({ type: [String], required: true, default: [] })
+  contacts!: string[];
 }
 
 export const RunSupplierSchema = SchemaFactory.createForClass(RunSupplier);
+
+@Schema({ _id: false })
+export class RunOutreach {
+  @Prop({ type: String, required: true })
+  id!: string;
+
+  @Prop({ type: String, required: true })
+  supplierId!: string;
+
+  @Prop({ type: String, required: true })
+  recipient!: string;
+
+  @Prop({ type: String, required: true })
+  subject!: string;
+
+  @Prop({ type: String, required: true })
+  text!: string;
+
+  @Prop({ type: Number, required: true, default: 1 })
+  version!: number;
+
+  @Prop({ type: String, required: true })
+  contentHash!: string;
+
+  @Prop({ type: String, required: true, enum: ["draft", "approved", "queued", "sending", "sent", "failed"] })
+  status!: OutreachStatus;
+
+  @Prop({ type: String, required: false })
+  approvedHash?: string;
+
+  @Prop({ type: Date, required: false })
+  approvedAt?: Date;
+
+  @Prop({ type: String, required: false })
+  messageId?: string;
+
+  @Prop({ type: String, required: false })
+  failureReason?: string;
+
+  @Prop({ type: String, required: false, enum: ["sending", "sent", "failed"] })
+  testStatus?: OutreachTestStatus;
+
+  @Prop({ type: Number, required: false })
+  testVersion?: number;
+
+  @Prop({ type: String, required: false })
+  testRecipient?: string;
+
+  @Prop({ type: String, required: false })
+  testMessageId?: string;
+
+  @Prop({ type: String, required: false })
+  testFailureReason?: string;
+
+  @Prop({ type: Date, required: false })
+  testSentAt?: Date;
+
+  @Prop({ type: Date, required: false })
+  leaseUntil?: Date;
+
+  @Prop({ type: Number, required: true, default: 0 })
+  attempts!: number;
+
+  @Prop({ type: Date, required: true, default: () => new Date() })
+  createdAt!: Date;
+
+  @Prop({ type: Date, required: true, default: () => new Date() })
+  updatedAt!: Date;
+}
+
+export const RunOutreachSchema = SchemaFactory.createForClass(RunOutreach);
+
+/** One state-changing call made against OrdivaRegistry on Arc. */
+@Schema({ _id: false })
+export class RunContractActivity {
+  @Prop({ type: String, required: true })
+  id!: string;
+
+  @Prop({ type: String, required: true, enum: ["run_registered", "ledger_anchored", "run_closed"] })
+  type!: ContractActivityType;
+
+  @Prop({ type: String, required: true, enum: ["pending", "submitted", "confirmed", "failed"] })
+  state!: ContractActivityState;
+
+  @Prop({ type: String, required: true })
+  network!: "eip155:5042002";
+
+  @Prop({ type: String, required: true })
+  contractAddress!: string;
+
+  /** UUIDv4 reused with Circle so retries cannot create duplicate writes. */
+  @Prop({ type: String, required: true })
+  idempotencyKey!: string;
+
+  @Prop({ type: String, required: false })
+  circleTransactionId?: string;
+
+  @Prop({ type: String, required: false })
+  transactionHash?: string;
+
+  @Prop({ type: String, required: false })
+  failureReason?: string;
+
+  @Prop({ type: Date, required: true, default: () => new Date() })
+  createdAt!: Date;
+
+  @Prop({ type: Date, required: true, default: () => new Date() })
+  updatedAt!: Date;
+}
+
+export const RunContractActivitySchema = SchemaFactory.createForClass(RunContractActivity);
 
 /**
  * A sourcing run and its complete spend history.
@@ -117,7 +259,14 @@ export class SourcingRun {
   @Prop({
     type: String,
     required: true,
-    enum: ["research_ready", "verifying", "verified", "budget_exhausted"]
+    enum: [
+      "research_ready",
+      "verifying",
+      "verified",
+      "partially_verified",
+      "verification_failed",
+      "budget_exhausted"
+    ]
   })
   status!: RunStatus;
 
@@ -135,6 +284,19 @@ export class SourcingRun {
 
   @Prop({ type: [RunPurchaseSchema], required: true, default: [] })
   purchases!: RunPurchase[];
+
+  @Prop({ type: [RunOutreachSchema], required: true, default: [] })
+  outreach!: RunOutreach[];
+
+  @Prop({ type: [RunContractActivitySchema], required: true, default: [] })
+  contractActivities!: RunContractActivity[];
+
+  /** Persistent lease for restart-safe background verification work. */
+  @Prop({ type: Date, required: false })
+  verificationLeaseUntil?: Date;
+
+  @Prop({ type: Number, required: true, default: 0 })
+  verificationAttempts!: number;
 
   @Prop({ type: Object, required: true })
   research!: {

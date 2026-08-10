@@ -24,6 +24,7 @@ export class AdaptersController {
       network: ARC_TESTNET_CAIP2,
       upstreamMode: this.config.ORDIVA_UPSTREAM_MODE,
       sellerAddress: this.config.ARC_ADAPTER_SELLER_ADDRESS,
+      registryAddress: this.config.ARC_REGISTRY_ADDRESS ?? null,
       terms: "Arc Testnet x402 payment purchases access to an Ordiva-operated adapter backed by the disclosed conventional upstream.",
       adapters: this.registry.all().map((adapter) => ({
         id: adapter.id,

@@ -14,7 +14,7 @@ export default async function SignInPage({
   const returnTo =
     requestedReturnTo?.startsWith("/") && !requestedReturnTo.startsWith("//")
       ? requestedReturnTo
-      : "/";
+      : "/app";
 
   return (
     <main className="min-h-screen bg-ink px-4 py-4 text-paper sm:px-6 lg:px-8">
